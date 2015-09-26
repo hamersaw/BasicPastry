@@ -1,4 +1,4 @@
-package com.hamersaw.basic_pastry_p2p;
+package com.hamersaw.basic_pastry;
 
 public class Peer {
 	private byte[] id;

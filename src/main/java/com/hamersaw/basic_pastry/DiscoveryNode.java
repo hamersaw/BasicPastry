@@ -1,4 +1,4 @@
-package com.hamersaw.basic_pastry_p2p;
+package com.hamersaw.basic_pastry;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -15,12 +15,12 @@ import java.util.Map.Entry;
 import java.util.HashMap;
 import java.util.Random;
 
-import com.hamersaw.basic_pastry_p2p.message.ErrorMsg;
-import com.hamersaw.basic_pastry_p2p.message.Message;
-import com.hamersaw.basic_pastry_p2p.message.RemoveNodeMsg;
-import com.hamersaw.basic_pastry_p2p.message.RegisterNodeMsg;
-import com.hamersaw.basic_pastry_p2p.message.RegisterNodeReplyMsg;
-import com.hamersaw.basic_pastry_p2p.message.SuccessMsg;
+import com.hamersaw.basic_pastry.message.ErrorMsg;
+import com.hamersaw.basic_pastry.message.Message;
+import com.hamersaw.basic_pastry.message.RemoveNodeMsg;
+import com.hamersaw.basic_pastry.message.RegisterNodeMsg;
+import com.hamersaw.basic_pastry.message.RegisterNodeReplyMsg;
+import com.hamersaw.basic_pastry.message.SuccessMsg;
 
 public class DiscoveryNode extends Thread {
 	private static final Logger LOGGER = Logger.getLogger(DiscoveryNode.class.getCanonicalName());

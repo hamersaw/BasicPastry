@@ -1,4 +1,4 @@
-package com.hamersaw.basic_pastry_p2p.message;
+package com.hamersaw.basic_pastry.message;
 
 public abstract class Message {
 	public static final int ERROR_MSG = 0,

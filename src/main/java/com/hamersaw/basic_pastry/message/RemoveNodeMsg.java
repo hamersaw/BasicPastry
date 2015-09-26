@@ -1,13 +1,13 @@
-package com.hamersaw.basic_pastry_p2p.message;
+package com.hamersaw.basic_pastry.message;
 
 import java.net.InetAddress;
 
-public class RegisterNodeMsg extends Message {
+public class RemoveNodeMsg extends Message {
 	private byte[] id;
 	private InetAddress inetAddress;
 	private int port;
 
-	public RegisterNodeMsg(byte[] id, InetAddress inetAddress, int port) {
+	public RemoveNodeMsg(byte[] id, InetAddress inetAddress, int port) {
 		this.id = id;
 		this.inetAddress = inetAddress;
 		this.port = port;
@@ -27,6 +27,6 @@ public class RegisterNodeMsg extends Message {
 
 	@Override
 	public int getMsgType() {
-		return REGISTER_NODE_MSG;
+		return REMOVE_NODE_MSG;
 	}
 }
