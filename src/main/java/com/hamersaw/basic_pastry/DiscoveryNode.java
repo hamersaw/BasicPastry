@@ -31,6 +31,7 @@ public class DiscoveryNode extends Thread {
 
 	public DiscoveryNode(int port) {
 		random = new Random();
+		this.port = port;
 		nodes = new HashMap();
 		readWriteLock = new ReentrantReadWriteLock();
 	}
@@ -44,7 +45,6 @@ public class DiscoveryNode extends Thread {
 			).start();
 		} catch(Exception e) {
 			System.out.println("Usage: DiscoveryNode port");
-			System.exit(1);
 		}
 	}
 
@@ -52,17 +52,17 @@ public class DiscoveryNode extends Thread {
 	public void run() {
 		try {
 			ServerSocket serverSocket = new ServerSocket(port);
-			LOGGER.info("Chunk server started successfully");
+			LOGGER.info("discovery node started successfully on port " + port);
 
+			//accept connections
 			while(true) {
 				Socket socket = serverSocket.accept();
 				LOGGER.fine("Received connection from '" + socket.getInetAddress() + ":" + socket.getPort() + "'.");
 
-				new Thread(new DiscoveryNodeWorker(socket, this)).start();
+				new Thread(new DiscoveryNodeWorker(socket)).start();
 			}
 		} catch(Exception e) {
-			e.printStackTrace();
-			System.exit(1);
+			LOGGER.severe(e.getMessage());
 		}
 	}
 
@@ -73,7 +73,7 @@ public class DiscoveryNode extends Thread {
 			//check to see if id already exists in cluster
 			for(byte[] array : nodes.keySet()) {
 				if(java.util.Arrays.equals(array, id)) {
-					throw new Exception("ID already exists in cluster");
+					throw new Exception("ID '" + HexConverter.convertBytesToHex(id) + "' already exists in cluster");
 				}
 			}
 		} finally {
@@ -84,12 +84,13 @@ public class DiscoveryNode extends Thread {
 		readWriteLock.writeLock().lock();
 		try {
 			nodes.put(id, nodeAddress);
+			LOGGER.info("Added id '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
 		} finally {
 			readWriteLock.writeLock().unlock();
 		}
 	}
 
-	protected RegisterNodeReplyMsg genNodeReplyMsg() throws Exception {
+	protected Message genNodeReplyMsg() throws Exception {
 		readWriteLock.readLock().lock();
 		try {
 			if(nodes.size() != 0) {
@@ -102,7 +103,7 @@ public class DiscoveryNode extends Thread {
 				}
 			}
 
-			return new RegisterNodeReplyMsg(null, null, -1);
+			return new SuccessMsg();
 		} finally {
 			readWriteLock.readLock().unlock();
 		}
@@ -120,7 +121,7 @@ public class DiscoveryNode extends Thread {
 			}
 
 			if(removeArray == null) {
-				throw new Exception("Unable to remove node. ID not found.");
+				throw new Exception("Unable to remove node. ID '" + HexConverter.convertBytesToHex(id) + "' not found.");
 			} else {
 				//check if inet address is matching
 				if(!nodes.get(removeArray).equals(nodeAddress)) {
@@ -128,6 +129,7 @@ public class DiscoveryNode extends Thread {
 				} else {
 					//remove node
 					nodes.remove(removeArray);
+					LOGGER.info("Removed id '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
 				}
 			}
 		} finally {
@@ -138,7 +140,7 @@ public class DiscoveryNode extends Thread {
 	private class DiscoveryNodeWorker extends Thread{
 		protected Socket socket;
 
-		public DiscoveryNodeWorker(Socket socket, DiscoveryNode discoveryNode) {
+		public DiscoveryNodeWorker(Socket socket) {
 			this.socket  = socket;
 		}
 

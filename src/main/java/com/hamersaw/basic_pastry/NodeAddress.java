@@ -33,4 +33,9 @@ public class NodeAddress {
 
 		return false;
 	}
+
+	@Override
+	public String toString() {
+		return inetAddress.toString() + ":" + port;
+	}
 }
