@@ -1,8 +1,10 @@
 package com.hamersaw.basic_pastry;
 
+import java.io.Serializable;
+
 import java.net.InetAddress;
 
-public class NodeAddress {
+public class NodeAddress implements Serializable {
 	private InetAddress inetAddress;
 	private int port;
 
@@ -36,6 +38,6 @@ public class NodeAddress {
 
 	@Override
 	public String toString() {
-		return inetAddress.toString() + ":" + port;
+		return (inetAddress != null ? inetAddress.toString() : "null") + ":" + port;
 	}
 }

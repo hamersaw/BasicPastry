@@ -40,9 +40,7 @@ public class DiscoveryNode extends Thread {
 		try {
 			int port = Integer.parseInt(args[0]);
 
-			new Thread(
-				new DiscoveryNode(port)
-			).start();
+			new Thread(new DiscoveryNode(port)).start();
 		} catch(Exception e) {
 			System.out.println("Usage: DiscoveryNode port");
 		}
@@ -84,7 +82,7 @@ public class DiscoveryNode extends Thread {
 		readWriteLock.writeLock().lock();
 		try {
 			nodes.put(id, nodeAddress);
-			LOGGER.info("Added id '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
+			LOGGER.info("Added ID '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
 		} finally {
 			readWriteLock.writeLock().unlock();
 		}
@@ -94,10 +92,15 @@ public class DiscoveryNode extends Thread {
 		readWriteLock.readLock().lock();
 		try {
 			if(nodes.size() != 0) {
-				//generate random number and iterate through peers until found
-				int num = random.nextInt() % nodes.size();	
+				//generate random number and iterate through peers while decrementing count
+				int count = random.nextInt() % nodes.size();
+				if(count < 0) {
+					count *= -1;
+				}
+
+				//find "count"th element in nodes
 				for(Entry<byte[],NodeAddress> entry : nodes.entrySet()) {
-					if(num-- == 0) {
+					if(count-- == 0) {
 						return new RegisterNodeReplyMsg(entry.getKey(), entry.getValue().getInetAddress(), entry.getValue().getPort());
 					}
 				}
@@ -129,7 +132,7 @@ public class DiscoveryNode extends Thread {
 				} else {
 					//remove node
 					nodes.remove(removeArray);
-					LOGGER.info("Removed id '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
+					LOGGER.info("Removed ID '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
 				}
 			}
 		} finally {

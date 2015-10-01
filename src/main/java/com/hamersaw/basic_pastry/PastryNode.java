@@ -3,31 +3,82 @@ package com.hamersaw.basic_pastry;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
+import java.util.Comparator;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.HashMap;
 import java.util.logging.Logger;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
+import java.util.SortedMap;
+import java.util.TreeMap;
+
+import java.nio.ByteBuffer;
 
 import java.net.ServerSocket;
 import java.net.Socket;
 
 import com.hamersaw.basic_pastry.message.ErrorMsg;
 import com.hamersaw.basic_pastry.message.Message;
+import com.hamersaw.basic_pastry.message.NodeJoinMsg;
 import com.hamersaw.basic_pastry.message.RegisterNodeMsg;
 import com.hamersaw.basic_pastry.message.RegisterNodeReplyMsg;
+import com.hamersaw.basic_pastry.message.RoutingInfoMsg;
 
 public class PastryNode extends Thread {
 	private static final Logger LOGGER = Logger.getLogger(PastryNode.class.getCanonicalName());
+	public static final int ID_BYTES = 2;
+	public static int MAX_LEAF_SET_SIZE = 2;
 	protected byte[] id;
+	protected short idValue;
 	protected String discoveryNodeAddress;
 	protected int discoveryNodePort, port;
+	protected SortedMap<byte[],NodeAddress> lessThanLS, greaterThanLS;
 	protected ReadWriteLock readWriteLock;
 
 	public PastryNode(byte[] id, String discoveryNodeAddress, int discoveryNodePort, int port) {
 		this.id = id;
+		idValue = convertBytesToShort(this.id);
 		this.discoveryNodeAddress = discoveryNodeAddress;
 		this.discoveryNodePort = discoveryNodePort;
 		this.port = port;
+
+		lessThanLS = new TreeMap(
+				new Comparator<byte[]>() {
+					@Override public int compare(byte[] b1, byte[] b2) {
+						int s1 = lessThanDistance(convertBytesToShort(b1), idValue),
+						    s2 = lessThanDistance(convertBytesToShort(b2), idValue);
+
+						if(s1 < s2) {
+							return 1;
+						} else if(s1 > s2) {
+							return -1;
+						} else {
+							return 0;
+						}
+					}
+				}
+			);
+
+		greaterThanLS = new TreeMap(
+				new Comparator<byte[]>() {
+					@Override public int compare(byte[] b1, byte[] b2) {
+						int s1 = greaterThanDistance(convertBytesToShort(b1), idValue),
+						    s2 = greaterThanDistance(convertBytesToShort(b2), idValue);
+
+						if(s1 > s2) {
+							return 1;
+						} else if(s1 < s2) {
+							return -1;
+						} else {
+							return 0;
+						}
+					}
+				}
+			);
+
+		
 		readWriteLock = new ReentrantReadWriteLock();
 	}
 
@@ -36,13 +87,10 @@ public class PastryNode extends Thread {
 			String discoveryNodeAddress = args[0];
 			int discoveryNodePort = Integer.parseInt(args[1]);
 			int port = Integer.parseInt(args[2]);
-			byte[] id = args.length == 4 ? HexConverter.convertHexToBytes(args[3]) : generateRandomID(2);
+			byte[] id = args.length == 4 ? HexConverter.convertHexToBytes(args[3]) : generateRandomID(ID_BYTES);
 
-			new Thread(
-				new PastryNode(id, discoveryNodeAddress, discoveryNodePort, port)
-			).start();
+			new Thread(new PastryNode(id, discoveryNodeAddress, discoveryNodePort, port)).start();
 		} catch(Exception e) {
-			e.printStackTrace();
 			LOGGER.severe(e.getMessage());
 			System.out.println("Usage: PastryNode discoveryNodeAddress discoveryNodePort port [id]");
 		}
@@ -70,8 +118,14 @@ public class PastryNode extends Thread {
 				switch(replyMsg.getMsgType()) {
 				case Message.REGISTER_NODE_REPLY_MSG:
 					RegisterNodeReplyMsg registerNodeReplyMsg = (RegisterNodeReplyMsg) replyMsg;
-					LOGGER.info("Recieved node info for '" + HexConverter.convertBytesToHex(registerNodeReplyMsg.getID()) + "' at '" + registerNodeReplyMsg.getInetAddress() + ":" + registerNodeReplyMsg.getPort() + "'");
-					//TODO add the node to your cache
+					LOGGER.info("Sending node join message to '" + registerNodeReplyMsg.getInetAddress() + ":" + registerNodeReplyMsg.getPort() + "'");
+
+					//send node join message
+					Socket nodeSocket = new Socket(registerNodeReplyMsg.getInetAddress(), registerNodeReplyMsg.getPort());
+					NodeJoinMsg nodeJoinMsg = new NodeJoinMsg(id, serverSocket.getInetAddress(), port);
+					ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
+					nodeOut.writeObject(nodeJoinMsg);
+
 					success = true;
 					break;
 				case Message.SUCCESS_MSG:
@@ -80,7 +134,7 @@ public class PastryNode extends Thread {
 					break;
 				case Message.ERROR_MSG:
 					LOGGER.severe(((ErrorMsg)replyMsg).getMsg());
-					id = generateRandomID(2);
+					id = generateRandomID(ID_BYTES);
 					continue;
 				default:
 					LOGGER.severe("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
@@ -112,7 +166,147 @@ public class PastryNode extends Thread {
 		return bytes;
 	}
 
-	private class PastryNodeWorker extends Thread{
+	protected short convertBytesToShort(byte[] bytes) {
+		ByteBuffer buf = ByteBuffer.allocate(bytes.length);
+		for(int i=0; i<bytes.length; i++) {
+			buf.put(bytes[i]);
+		}
+
+		return buf.getShort(0);
+	}
+
+	protected int lessThanDistance(short s1, short s2) {
+		int distance = 0;
+		if(s1 < s2) {
+			distance = Math.abs(s2 - s1);
+		} else if(s1 > s2) {
+			distance = Math.abs(Short.MAX_VALUE - s1) + Math.abs(s2 - Short.MIN_VALUE);
+		}
+
+		//System.out.println("lessThanDistance(" + s1 + "," + s2 + ") = " + distance);
+		return distance;
+	}
+
+	protected int greaterThanDistance(short s1, short s2) {
+		int distance = 0;
+		if(s1 > s2) {
+			distance = Math.abs(s1 - s2);
+		} else if(s1 < s2) {
+			distance = Math.abs(s1 - Short.MIN_VALUE) + Math.abs(Short.MAX_VALUE - s2);
+		}
+
+		//System.out.println("greaterThanDistance(" + s1 + "," + s2 + ") = " + distance);
+		return distance;
+	}
+
+	protected NodeAddress findClosestNode(byte[] nodeID) {
+		readWriteLock.readLock().lock();
+		try {
+			short nodeIDValue = convertBytesToShort(nodeID);
+			int minDistance = Math.min(lessThanDistance(idValue, nodeIDValue), greaterThanDistance(idValue, nodeIDValue));
+			//int minDistance = Math.abs(convertBytesToShort(id) - nodeIDValue);
+			NodeAddress minNodeAddress = null;
+
+			//check less than leaf set distances
+			for(byte[] bytes : lessThanLS.keySet()) {
+				short bytesValue = convertBytesToShort(bytes);
+				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
+				//int distance = Math.abs(convertBytesToShort(bytes) - nodeIDValue);
+				if(distance < minDistance) {
+					minDistance = distance;
+					minNodeAddress = lessThanLS.get(bytes);
+				}
+			}
+
+			//check greater than leaf set distances
+			for(byte[] bytes : greaterThanLS.keySet()) {
+				short bytesValue = convertBytesToShort(bytes);
+				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
+				//int distance = Math.abs(convertBytesToShort(bytes) - nodeIDValue);
+				if(distance < minDistance) {
+					minDistance = distance;
+					minNodeAddress = greaterThanLS.get(bytes);
+				}
+			}
+
+			if(minNodeAddress == null) {
+				return new NodeAddress(null, port);
+			} else {
+				return minNodeAddress;
+			}
+		} finally {
+			readWriteLock.readLock().unlock();
+		}
+	}
+
+	protected Map<byte[],NodeAddress> getRelevantLeafSet() {
+		readWriteLock.readLock().lock();
+		try {
+			//for now just adding every element of leaf set - everything is relevant
+			Map<byte[],NodeAddress> relevantLeafSet = new HashMap();
+			relevantLeafSet.putAll(lessThanLS);
+			relevantLeafSet.putAll(greaterThanLS);
+			relevantLeafSet.put(id, new NodeAddress(null, port));
+			return relevantLeafSet;
+		} finally {
+			readWriteLock.readLock().unlock();
+		}
+	}
+
+	protected void addNode(byte[] addID, NodeAddress nodeAddress) {
+		System.out.println("addNode(" + HexConverter.convertBytesToHex(addID) + "," + nodeAddress + ")");
+		readWriteLock.writeLock().lock();
+		try {
+			//check if this id belongs to this node
+			if(java.util.Arrays.equals(addID, id)) {
+				return;
+			}
+
+			short addIDValue = convertBytesToShort(addID);
+
+			//search for value in less than leaf set
+			boolean lessThanFound = false;
+			for(byte[] bytes : lessThanLS.keySet()) {
+				if(java.util.Arrays.equals(bytes, addID)) {
+					return;
+				}
+			}
+
+			if(!lessThanFound) {
+				if(lessThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more less than nodes
+					//System.out.println("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in less than leaf set");
+					lessThanLS.put(addID, nodeAddress);
+				} else if(lessThanDistance(addIDValue, idValue) < lessThanDistance(convertBytesToShort(lessThanLS.firstKey()), idValue)) {
+					//System.out.println("\tRemoved node " + HexConverter.convertBytesToHex(lessThanLS.firstKey()) + ":" + convertBytesToShort(lessThanLS.firstKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
+					lessThanLS.remove(lessThanLS.firstKey());
+					lessThanLS.put(addID, nodeAddress);
+				}
+			}
+
+			//search for value in greater than leaf set
+			boolean greaterThanFound = false;
+			for(byte[] bytes : greaterThanLS.keySet()) {
+				if(java.util.Arrays.equals(bytes, addID)) {
+					greaterThanFound = true;
+				}
+			}
+
+			if(!greaterThanFound) {
+				if(greaterThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more greater than nodes
+					//System.out.println("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in greater than leaf set");
+					greaterThanLS.put(addID, nodeAddress);
+				} else if(greaterThanDistance(addIDValue, idValue) < greaterThanDistance(convertBytesToShort(greaterThanLS.lastKey()), idValue)) {
+					//System.out.println("\tRemoved node " + HexConverter.convertBytesToHex(greaterThanLS.lastKey()) + ":" + convertBytesToShort(greaterThanLS.lastKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
+					greaterThanLS.remove(greaterThanLS.lastKey());
+					greaterThanLS.put(addID, nodeAddress);
+				}
+			}
+		} finally {
+			readWriteLock.writeLock().unlock();
+		}
+	}
+
+	protected class PastryNodeWorker extends Thread{
 		protected Socket socket;
 
 		public PastryNodeWorker(Socket socket) {
@@ -128,6 +322,84 @@ public class PastryNode extends Thread {
 
 				Message replyMsg = null;
 				switch(requestMsg.getMsgType()) {
+				case Message.NODE_JOIN_MSG:
+					LOGGER.info("Recieved node join message.");
+					NodeJoinMsg nodeJoinMsg = (NodeJoinMsg) requestMsg;
+
+					//find closest node
+					NodeAddress nodeAddress = findClosestNode(nodeJoinMsg.getID());
+
+					//if we found a closer node forward the node join message
+					if(nodeAddress.getInetAddress() != null) {
+						LOGGER.info("Forwarding node join to '" + nodeAddress + "'");
+						Socket nodeSocket = new Socket(nodeAddress.getInetAddress(), nodeAddress.getPort());
+						ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
+						nodeOut.writeObject(nodeJoinMsg);
+
+						nodeSocket.close();
+					}
+
+					//send routing table information to other node
+					Socket joinNodeSocket = new Socket(nodeJoinMsg.getInetAddress(), nodeJoinMsg.getPort());
+					ObjectOutputStream joinNodeOut = new ObjectOutputStream(joinNodeSocket.getOutputStream());
+					joinNodeOut.writeObject(
+						new RoutingInfoMsg(
+							getRelevantLeafSet(),
+							nodeAddress.getInetAddress() == null //last routing info message recieved by the joining node
+						)
+					);
+
+					joinNodeSocket.close();
+					break;
+				case Message.ROUTING_INFO_MSG:
+					RoutingInfoMsg routingInfoMsg = (RoutingInfoMsg) requestMsg;
+					LOGGER.info("Recieved routing info message with " + routingInfoMsg.getLeafSet().size() + " routes.");
+
+					//update leaf set
+					for(Entry<byte[],NodeAddress> entry : routingInfoMsg.getLeafSet().entrySet()) {
+						if(entry.getValue().getInetAddress() == null) {
+							addNode(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
+						} else {
+							addNode(entry.getKey(), entry.getValue());
+						}
+					}
+
+					//TMP print out leaf set
+					readWriteLock.readLock().lock();
+					System.out.println("----LEAF SET----");
+					for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
+						System.out.println(HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+					}
+					System.out.println(HexConverter.convertBytesToHex(id) + ":" + convertBytesToShort(id) + " - " + port);
+					for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
+						System.out.println(HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+					}
+					System.out.println("----------------");
+					readWriteLock.readLock().unlock();
+
+					//if this is a message from the closest node send routing information to every node in leaf set
+					if(routingInfoMsg.getBroadcastMsg()) {
+						RoutingInfoMsg riMsg = new RoutingInfoMsg(getRelevantLeafSet(), false); //TODO potentially change to true
+
+						//send to less than leaf set
+						for(NodeAddress nodeAddr : lessThanLS.values()) {
+							Socket nodeSocket = new Socket(nodeAddr.getInetAddress(), nodeAddr.getPort());
+							ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
+							nodeOut.writeObject(riMsg);
+
+							nodeSocket.close();	
+						}
+
+						//send to greater than leaf set
+						for(NodeAddress nodeAddr : greaterThanLS.values()) {
+							Socket nodeSocket = new Socket(nodeAddr.getInetAddress(), nodeAddr.getPort());
+							ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
+							nodeOut.writeObject(riMsg);
+
+							nodeSocket.close();	
+						}
+					}
+					break;
 				default:
 					LOGGER.severe("Unrecognized request message type '" + requestMsg.getMsgType() + "'");
 					break;
@@ -139,6 +411,7 @@ public class PastryNode extends Thread {
 					out.writeObject(replyMsg);
 				}
 			} catch(Exception e) {
+				e.printStackTrace();
 				LOGGER.severe(e.getMessage());
 			}
 		}
