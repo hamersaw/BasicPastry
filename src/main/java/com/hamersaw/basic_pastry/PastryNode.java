@@ -29,12 +29,13 @@ import com.hamersaw.basic_pastry.message.RoutingInfoMsg;
 public class PastryNode extends Thread {
 	private static final Logger LOGGER = Logger.getLogger(PastryNode.class.getCanonicalName());
 	public static final int ID_BYTES = 2;
-	public static int MAX_LEAF_SET_SIZE = 2;
+	public static int MAX_LEAF_SET_SIZE = 1;
 	protected byte[] id;
 	protected short idValue;
 	protected String discoveryNodeAddress;
 	protected int discoveryNodePort, port;
 	protected SortedMap<byte[],NodeAddress> lessThanLS, greaterThanLS;
+	protected Map<String,NodeAddress>[] routingTable;
 	protected ReadWriteLock readWriteLock;
 
 	public PastryNode(byte[] id, String discoveryNodeAddress, int discoveryNodePort, int port) {
@@ -44,6 +45,7 @@ public class PastryNode extends Thread {
 		this.discoveryNodePort = discoveryNodePort;
 		this.port = port;
 
+		//initialize tree map structures
 		lessThanLS = new TreeMap(
 				new Comparator<byte[]>() {
 					@Override public int compare(byte[] b1, byte[] b2) {
@@ -78,7 +80,13 @@ public class PastryNode extends Thread {
 				}
 			);
 
-		
+		//initialize routing table structure
+		routingTable = new Map[4];
+		for(int i=0; i<routingTable.length; i++) {
+			routingTable[i] = new HashMap();
+		}
+
+		//initialize locking mechanize
 		readWriteLock = new ReentrantReadWriteLock();
 	}
 
@@ -183,7 +191,6 @@ public class PastryNode extends Thread {
 			distance = Math.abs(Short.MAX_VALUE - s1) + Math.abs(s2 - Short.MIN_VALUE);
 		}
 
-		//System.out.println("lessThanDistance(" + s1 + "," + s2 + ") = " + distance);
 		return distance;
 	}
 
@@ -195,7 +202,6 @@ public class PastryNode extends Thread {
 			distance = Math.abs(s1 - Short.MIN_VALUE) + Math.abs(Short.MAX_VALUE - s2);
 		}
 
-		//System.out.println("greaterThanDistance(" + s1 + "," + s2 + ") = " + distance);
 		return distance;
 	}
 
@@ -204,14 +210,12 @@ public class PastryNode extends Thread {
 		try {
 			short nodeIDValue = convertBytesToShort(nodeID);
 			int minDistance = Math.min(lessThanDistance(idValue, nodeIDValue), greaterThanDistance(idValue, nodeIDValue));
-			//int minDistance = Math.abs(convertBytesToShort(id) - nodeIDValue);
 			NodeAddress minNodeAddress = null;
 
 			//check less than leaf set distances
 			for(byte[] bytes : lessThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				//int distance = Math.abs(convertBytesToShort(bytes) - nodeIDValue);
 				if(distance < minDistance) {
 					minDistance = distance;
 					minNodeAddress = lessThanLS.get(bytes);
@@ -222,7 +226,6 @@ public class PastryNode extends Thread {
 			for(byte[] bytes : greaterThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				//int distance = Math.abs(convertBytesToShort(bytes) - nodeIDValue);
 				if(distance < minDistance) {
 					minDistance = distance;
 					minNodeAddress = greaterThanLS.get(bytes);
@@ -253,8 +256,8 @@ public class PastryNode extends Thread {
 		}
 	}
 
-	protected void addNode(byte[] addID, NodeAddress nodeAddress) {
-		System.out.println("addNode(" + HexConverter.convertBytesToHex(addID) + "," + nodeAddress + ")");
+	protected void updateLeafSet(byte[] addID, NodeAddress nodeAddress) {
+		LOGGER.finest("updateLeafSet(" + HexConverter.convertBytesToHex(addID) + "," + nodeAddress + ")");
 		readWriteLock.writeLock().lock();
 		try {
 			//check if this id belongs to this node
@@ -274,10 +277,10 @@ public class PastryNode extends Thread {
 
 			if(!lessThanFound) {
 				if(lessThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more less than nodes
-					//System.out.println("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in less than leaf set");
+					LOGGER.fine("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in less than leaf set");
 					lessThanLS.put(addID, nodeAddress);
 				} else if(lessThanDistance(addIDValue, idValue) < lessThanDistance(convertBytesToShort(lessThanLS.firstKey()), idValue)) {
-					//System.out.println("\tRemoved node " + HexConverter.convertBytesToHex(lessThanLS.firstKey()) + ":" + convertBytesToShort(lessThanLS.firstKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
+					LOGGER.fine("\tRemoved node " + HexConverter.convertBytesToHex(lessThanLS.firstKey()) + ":" + convertBytesToShort(lessThanLS.firstKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
 					lessThanLS.remove(lessThanLS.firstKey());
 					lessThanLS.put(addID, nodeAddress);
 				}
@@ -293,10 +296,10 @@ public class PastryNode extends Thread {
 
 			if(!greaterThanFound) {
 				if(greaterThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more greater than nodes
-					//System.out.println("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in greater than leaf set");
+					LOGGER.fine("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in greater than leaf set");
 					greaterThanLS.put(addID, nodeAddress);
 				} else if(greaterThanDistance(addIDValue, idValue) < greaterThanDistance(convertBytesToShort(greaterThanLS.lastKey()), idValue)) {
-					//System.out.println("\tRemoved node " + HexConverter.convertBytesToHex(greaterThanLS.lastKey()) + ":" + convertBytesToShort(greaterThanLS.lastKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
+					LOGGER.fine("\tRemoved node " + HexConverter.convertBytesToHex(greaterThanLS.lastKey()) + ":" + convertBytesToShort(greaterThanLS.lastKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
 					greaterThanLS.remove(greaterThanLS.lastKey());
 					greaterThanLS.put(addID, nodeAddress);
 				}
@@ -304,6 +307,10 @@ public class PastryNode extends Thread {
 		} finally {
 			readWriteLock.writeLock().unlock();
 		}
+	}
+
+	protected void updateRoutingTable(byte[] addID, NodeAddress nodeAddress) {
+		//TODO
 	}
 
 	protected class PastryNodeWorker extends Thread{
@@ -337,6 +344,8 @@ public class PastryNode extends Thread {
 						nodeOut.writeObject(nodeJoinMsg);
 
 						nodeSocket.close();
+					} else {
+						LOGGER.severe("Couldn't find a closer node");
 					}
 
 					//send routing table information to other node
@@ -350,6 +359,9 @@ public class PastryNode extends Thread {
 					);
 
 					joinNodeSocket.close();
+
+					//TODO update routing table
+					
 					break;
 				case Message.ROUTING_INFO_MSG:
 					RoutingInfoMsg routingInfoMsg = (RoutingInfoMsg) requestMsg;
@@ -358,23 +370,34 @@ public class PastryNode extends Thread {
 					//update leaf set
 					for(Entry<byte[],NodeAddress> entry : routingInfoMsg.getLeafSet().entrySet()) {
 						if(entry.getValue().getInetAddress() == null) {
-							addNode(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
+							updateLeafSet(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
+							updateRoutingTable(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
 						} else {
-							addNode(entry.getKey(), entry.getValue());
+							updateLeafSet(entry.getKey(), entry.getValue());
+							updateRoutingTable(entry.getKey(), entry.getValue());
 						}
 					}
 
-					//TMP print out leaf set
+					//print out leaf set and routing table
 					readWriteLock.readLock().lock();
-					System.out.println("----LEAF SET----");
+					StringBuilder routingInfo = new StringBuilder("----LEAF SET----");
 					for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
-						System.out.println(HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+						routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
 					}
-					System.out.println(HexConverter.convertBytesToHex(id) + ":" + convertBytesToShort(id) + " - " + port);
+					routingInfo.append("\n" + HexConverter.convertBytesToHex(id) + ":" + convertBytesToShort(id) + " - " + port);
 					for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
-						System.out.println(HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+						routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
 					}
-					System.out.println("----------------");
+					routingInfo.append("\n----------------");
+
+					routingInfo.append("\n----ROUTING TABLE----");
+					for(Map<String,NodeAddress> map : routingTable) {
+						for(Entry<String,NodeAddress> entry : map.entrySet()) {
+							routingInfo.append("\n" + entry.getKey() + " : " + entry.getValue());
+						}
+					}
+					routingInfo.append("\n---------------------");
+					LOGGER.info(routingInfo.toString());
 					readWriteLock.readLock().unlock();
 
 					//if this is a message from the closest node send routing information to every node in leaf set
