@@ -4,11 +4,11 @@ import java.net.InetAddress;
 
 public class NodeJoinMsg extends Message {
 	private byte[] id;
-	private short longestPrefixMatch;
+	private int longestPrefixMatch;
 	private InetAddress inetAddress;
 	private int port;
 
-	public NodeJoinMsg(byte[] id, short longestPrefixMatch,  InetAddress inetAddress, int port) {
+	public NodeJoinMsg(byte[] id, int longestPrefixMatch,  InetAddress inetAddress, int port) {
 		this.id = id;
 		this.longestPrefixMatch = longestPrefixMatch;
 		this.inetAddress = inetAddress;
@@ -19,12 +19,16 @@ public class NodeJoinMsg extends Message {
 		return id;
 	}
 
-	public void setLongestPrefixMatch(short longestPrefixMatch) {
+	public void setLongestPrefixMatch(int longestPrefixMatch) {
 		this.longestPrefixMatch = longestPrefixMatch;
 	}
 
-	public short getLongestPrefixMatch() {
+	public int getLongestPrefixMatch() {
 		return longestPrefixMatch;
+	}
+
+	public void setInetAddress(InetAddress inetAddress) {
+		this.inetAddress = inetAddress;
 	}
 
 	public InetAddress getInetAddress() {

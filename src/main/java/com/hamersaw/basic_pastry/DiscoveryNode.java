@@ -17,9 +17,10 @@ import java.util.Random;
 
 import com.hamersaw.basic_pastry.message.ErrorMsg;
 import com.hamersaw.basic_pastry.message.Message;
+import com.hamersaw.basic_pastry.message.NodeInfoMsg;
 import com.hamersaw.basic_pastry.message.RemoveNodeMsg;
 import com.hamersaw.basic_pastry.message.RegisterNodeMsg;
-import com.hamersaw.basic_pastry.message.RegisterNodeReplyMsg;
+import com.hamersaw.basic_pastry.message.RequestRandomNodeMsg;
 import com.hamersaw.basic_pastry.message.SuccessMsg;
 
 public class DiscoveryNode extends Thread {
@@ -88,7 +89,7 @@ public class DiscoveryNode extends Thread {
 		}
 	}
 
-	protected Message genNodeReplyMsg() throws Exception {
+	protected byte[] getRandomNode() throws Exception {
 		readWriteLock.readLock().lock();
 		try {
 			if(nodes.size() != 0) {
@@ -99,14 +100,14 @@ public class DiscoveryNode extends Thread {
 				}
 
 				//find "count"th element in nodes
-				for(Entry<byte[],NodeAddress> entry : nodes.entrySet()) {
+				for(byte[] id : nodes.keySet()) {
 					if(count-- == 0) {
-						return new RegisterNodeReplyMsg(entry.getKey(), entry.getValue().getInetAddress(), entry.getValue().getPort());
+						return id;
 					}
 				}
 			}
 
-			return new SuccessMsg();
+			return null;
 		} finally {
 			readWriteLock.readLock().unlock();
 		}
@@ -160,7 +161,18 @@ public class DiscoveryNode extends Thread {
 					RegisterNodeMsg registerNodeMsg = (RegisterNodeMsg) requestMsg;
 
 					try {
-						replyMsg = genNodeReplyMsg(); //generating before so we don't have to worry about the node we're adding
+						byte[] id = getRandomNode(); //getting random node before so we don't ahve to worry about blacklisting the node we're adding
+						if(id == null) {
+							replyMsg = new SuccessMsg();
+						} else {
+							readWriteLock.readLock().lock();
+							try {
+								replyMsg = new NodeInfoMsg(id, nodes.get(id));
+							} finally {
+								readWriteLock.readLock().unlock();
+							}
+						}
+
 						addNode(registerNodeMsg.getID(), new NodeAddress(socket.getInetAddress(), registerNodeMsg.getPort()));
 					} catch(Exception e) {
 						replyMsg = new ErrorMsg(e.getMessage());
@@ -172,6 +184,23 @@ public class DiscoveryNode extends Thread {
 					try {
 						removeNode(removeNodeMsg.getID(), new NodeAddress(socket.getInetAddress(), removeNodeMsg.getPort()));
 						replyMsg = new SuccessMsg();
+					} catch(Exception e) {
+						replyMsg = new ErrorMsg(e.getMessage());
+					}
+					break;
+				case Message.REQUEST_RANDOM_NODE_MSG:
+					try {
+						byte[] id = getRandomNode();
+						if(id == null) {
+							replyMsg = new ErrorMsg("There aren't any nodes registered in the cluster yet.");
+						} else {
+							readWriteLock.readLock().lock();
+							try {
+								replyMsg = new NodeInfoMsg(id, nodes.get(id));
+							} finally {
+								readWriteLock.readLock().unlock();
+							}
+						}
 					} catch(Exception e) {
 						replyMsg = new ErrorMsg(e.getMessage());
 					}

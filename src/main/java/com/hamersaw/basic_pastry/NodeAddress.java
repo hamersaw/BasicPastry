@@ -13,6 +13,10 @@ public class NodeAddress implements Serializable {
 		this.port = port;
 	}
 
+	public void setInetAddress(InetAddress inetAddress) {
+		this.inetAddress = inetAddress;
+	}
+
 	public InetAddress getInetAddress() {
 		return inetAddress;
 	}
