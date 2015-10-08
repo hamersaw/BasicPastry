@@ -109,16 +109,20 @@ public class StoreData {
 					//receive connection on server socket from node where data should reside
 					nodeSocket = serverSocket.accept();
 					in = new ObjectInputStream(nodeSocket.getInputStream());
-					Message replyMsg = (Message) in.readObject();
+					replyMsg = (Message) in.readObject();
 
 					//ensure we get a success message
 					if(replyMsg.getMsgType() == Message.ERROR_MSG) {
 						LOGGER.severe(((ErrorMsg)replyMsg).getMsg());
 						return;
-					} else if(replyMsg.getMsgType() != Message.SUCCESS_MSG) {
+					} else if(replyMsg.getMsgType() != Message.NODE_INFO_MSG) {
 						LOGGER.severe("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
 						return;
 					}
+
+					//write data to the node
+					nodeInfoMsg = (NodeInfoMsg) replyMsg;
+					
 
 					//send parts of the file in different chunks
 					LOGGER.info("TODO send file data over");

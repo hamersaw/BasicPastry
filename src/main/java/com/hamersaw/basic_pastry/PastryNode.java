@@ -190,6 +190,14 @@ public class PastryNode extends Thread {
 		return buf.getShort(0);
 	}
 
+	protected int getSingleHexDistance(String s1, String s2) {
+		return Math.abs(convertSingleHexToInt(s1) - convertSingleHexToInt(s2));
+	}
+
+	private int convertSingleHexToInt(String str) {
+		return Integer.parseInt(str.replace("a","10").replace("b","11").replace("c","12").replace("d","13").replace("e","14").replace("f","15"));
+	}
+
 	protected int lessThanDistance(short s1, short s2) {
 		int distance = 0;
 		if(s1 < s2) {
@@ -215,15 +223,7 @@ public class PastryNode extends Thread {
 	protected NodeAddress searchRoutingTableExact(byte[] nodeID, int prefixLength) {
 		readWriteLock.readLock().lock();
 		try {
-			String addIDStr = HexConverter.convertBytesToHex(nodeID);
-			NodeAddress nodeAddress = null;
-			for(Entry<String,NodeAddress> entry : routingTable[prefixLength].entrySet()) {
-				if(entry.getKey().substring(0, prefixLength + 1).equals(addIDStr.substring(0, prefixLength + 1))) {
-					return entry.getValue();
-				}
-			}
-
-			return null;
+			return routingTable[prefixLength].get(HexConverter.convertBytesToHex(nodeID).substring(prefixLength, prefixLength+1));
 		} finally {
 			readWriteLock.readLock().unlock();
 		}
@@ -232,18 +232,16 @@ public class PastryNode extends Thread {
 	protected NodeAddress searchRoutingTableClosest(byte[] nodeID, int prefixLength) {
 		readWriteLock.readLock().lock();
 		try {
-			short nodeIDValue = convertBytesToShort(nodeID);
-			int minDistance = Math.min(lessThanDistance(idValue, nodeIDValue), greaterThanDistance(idValue, nodeIDValue));
+			String nodeIDStr = HexConverter.convertBytesToHex(nodeID);
+			int minDistance = getSingleHexDistance(nodeIDStr.substring(prefixLength, prefixLength+1), nodeIDStr.substring(prefixLength, prefixLength+1));
 			NodeAddress nodeAddress = null;
 			for(Entry<String,NodeAddress> entry : routingTable[prefixLength].entrySet()) {
-				short bytesValue = convertBytesToShort(HexConverter.convertHexToBytes(entry.getKey()));
-				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				if(distance <= minDistance) {
+				int distance = getSingleHexDistance(entry.getKey(), nodeIDStr.substring(prefixLength, prefixLength+1));
+				if(distance < minDistance) {
 					minDistance = distance;
-					nodeAddress = entry.getValue(); 
+					nodeAddress = entry.getValue();
 				}
 			}
-
 			return nodeAddress;
 		} finally {
 			readWriteLock.readLock().unlock();
@@ -261,7 +259,7 @@ public class PastryNode extends Thread {
 			for(byte[] bytes : lessThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				if(distance <= minDistance) {
+				if(distance < minDistance) {
 					minDistance = distance;
 					minNodeAddress = lessThanLS.get(bytes);
 				}
@@ -271,7 +269,7 @@ public class PastryNode extends Thread {
 			for(byte[] bytes : greaterThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				if(distance <= minDistance) {
+				if(distance < minDistance) {
 					minDistance = distance;
 					minNodeAddress = greaterThanLS.get(bytes);
 				}
@@ -301,23 +299,10 @@ public class PastryNode extends Thread {
 		}
 	}
 
-	protected Map<String,NodeAddress> getRelevantRoutingTable(int[] prefixLengths) {
+	protected Map<String,NodeAddress> getRelevantRoutingTable(int prefixLength) {
 		readWriteLock.readLock().lock();
 		try {
-			if(prefixLengths.length == 1) {
-				return routingTable[prefixLengths[0]];
-			} else {
-				Map<String,NodeAddress> routingTableMap = new HashMap();
-				for(Map<String,NodeAddress> map : routingTable) {
-					for(Entry<String,NodeAddress> entry : map.entrySet()) {
-						if(!routingTableMap.containsKey(entry.getKey())) {
-							routingTableMap.put(entry.getKey(), entry.getValue());
-						}
-					}
-				}
-	
-				return routingTableMap;
-			}
+			return routingTable[prefixLength];
 		} finally {
 			readWriteLock.readLock().unlock();
 		}
@@ -376,27 +361,17 @@ public class PastryNode extends Thread {
 		}
 	}
 
-	protected void updateRoutingTable(String addIDStr, NodeAddress nodeAddress) {
+	protected void updateRoutingTable(String addIDStr, NodeAddress nodeAddress, int prefixLength) {
 		readWriteLock.writeLock().lock();
 		try {
-			//check if the id belongs to this node
-			if(addIDStr.equals(idStr)) {
+			//check if this is this node
+			if(idStr.substring(prefixLength, prefixLength+1).equals(addIDStr)) {
 				return;
 			}
 
-			//add id to routing table
-			for(int i=0; i<addIDStr.length(); i++) {
-				boolean found = false;
-				for(String str : routingTable[i].keySet()) {
-					if(addIDStr.substring(0, i+1).equals(str.substring(0, i+1))) {
-						found = true;
-						break;
-					}
-				}
-
-				if(!found) {
-					routingTable[i].put(addIDStr, nodeAddress);
-				}
+			//add entry to routing table
+			if(!routingTable[prefixLength].containsKey(addIDStr)) {
+				routingTable[prefixLength].put(addIDStr, nodeAddress);
 			}
 		} finally {
 			readWriteLock.writeLock().unlock();
@@ -425,13 +400,13 @@ public class PastryNode extends Thread {
 					if(nodeJoinMsg.getInetAddress() == null) {
 						nodeJoinMsg.setInetAddress(socket.getInetAddress()); //TODO don't like doing this but i don't know a better way
 					}
-					int p = nodeJoinMsg.getLongestPrefixMatch();
+					int p = nodeJoinMsg.getPrefixLength();
 
 					//search for an exact match in the routing table
 					NodeAddress nodeAddress = searchRoutingTableExact(nodeJoinMsg.getID(), p);
 					if(nodeAddress != null) {
 						//update longest prefix match if we have indeed found a match
-						nodeJoinMsg.setLongestPrefixMatch((nodeJoinMsg.getLongestPrefixMatch() + 1));
+						nodeJoinMsg.setLongestPrefixMatch((nodeJoinMsg.getPrefixLength() + 1));
 					}
 
 					//search for closest node in routing table
@@ -450,7 +425,8 @@ public class PastryNode extends Thread {
 					joinNodeOut.writeObject(
 						new RoutingInfoMsg(
 							getRelevantLeafSet(),
-							getRelevantRoutingTable(new int[]{p}),
+							p,
+							getRelevantRoutingTable(p),
 							nodeAddress.getInetAddress() == null //last routing info message recieved by the joining node
 						)
 					);
@@ -471,20 +447,37 @@ public class PastryNode extends Thread {
 					RoutingInfoMsg routingInfoMsg = (RoutingInfoMsg) requestMsg;
 					LOGGER.info("Recieved routing info message with " + routingInfoMsg.getLeafSet().size() + " routes.");
 
-					//update leaf set
+					//loop through leaf set
 					for(Entry<byte[],NodeAddress> entry : routingInfoMsg.getLeafSet().entrySet()) {
+						//update leaf set
 						if(entry.getValue().getInetAddress() == null) {
 							updateLeafSet(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
-							updateRoutingTable(HexConverter.convertBytesToHex(entry.getKey()), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
 						} else {
 							updateLeafSet(entry.getKey(), entry.getValue());
-							updateRoutingTable(HexConverter.convertBytesToHex(entry.getKey()), entry.getValue());
+						}
+
+						//update routing table
+						if(!java.util.Arrays.equals(entry.getKey(), id)) { //if not this id
+							String nodeIDStr = HexConverter.convertBytesToHex(entry.getKey());
+							int i=0;
+							for(i=0; i<4; i++) {
+								if(idStr.charAt(i) != nodeIDStr.charAt(i)) {
+									nodeIDStr = "" + nodeIDStr.charAt(i);
+									break;
+								}
+							}
+
+							if(entry.getValue().getInetAddress() == null) {
+								updateRoutingTable(nodeIDStr, new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()), i);
+							} else {
+								updateRoutingTable(nodeIDStr, entry.getValue(), i);
+							}
 						}
 					}
 
 					//update routing table
 					for(Entry<String,NodeAddress> entry : routingInfoMsg.getRoutingTable().entrySet()) {
-						updateRoutingTable(entry.getKey(), entry.getValue());
+						updateRoutingTable(entry.getKey(), entry.getValue(), routingInfoMsg.getPrefixLength());
 					}
 
 					//print out leaf set and routing table
@@ -503,8 +496,9 @@ public class PastryNode extends Thread {
 						routingInfo.append("\n----ROUTING TABLE----");
 						for(int i=0; i<routingTable.length; i++) {
 							Map<String,NodeAddress> map = routingTable[i];
+							routingInfo.append("\nprefix length:" + i);
 							for(Entry<String,NodeAddress> entry : map.entrySet()) {
-								routingInfo.append("\n" + entry.getKey().substring(0,i+1) + " : " + entry.getValue());
+								routingInfo.append("\n\t" + entry.getKey() + " : " + entry.getValue());
 							}
 						}
 						routingInfo.append("\n---------------------");
@@ -517,53 +511,75 @@ public class PastryNode extends Thread {
 					readWriteLock.readLock().lock();
 					try {
 						if(routingInfoMsg.getBroadcastMsg()) {
-							RoutingInfoMsg riMsg = new RoutingInfoMsg(getRelevantLeafSet(), getRelevantRoutingTable(new int[]{0,1,2,3}), false); //TODO potentially change to true
-							List<String> nodeBlacklist = new LinkedList();
+							List<NodeAddress> nodeBlacklist = new LinkedList();
 
 							//send to less than leaf set
 							for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
-								if(nodeBlacklist.contains(HexConverter.convertBytesToHex(entry.getKey()))) {
+								if(nodeBlacklist.contains(entry.getValue())) {
 									continue;
 								} else {
-									nodeBlacklist.add(HexConverter.convertBytesToHex(entry.getKey()));
+									nodeBlacklist.add(entry.getValue());
 								}
 
+								//find longest prefix match
+								String nodeIDStr = HexConverter.convertBytesToHex(entry.getKey());
+								int i=0;
+								for(i=0; i<4; i++) {
+									if(idStr.charAt(i) != nodeIDStr.charAt(i)) {
+										break;
+									}
+								}
+
+								//send routing update
 								Socket nodeSocket = new Socket(entry.getValue().getInetAddress(), entry.getValue().getPort());
 								ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
-								nodeOut.writeObject(riMsg);
+								nodeOut.writeObject(new RoutingInfoMsg(getRelevantLeafSet(), i, routingTable[i], false));
 
 								nodeSocket.close();
 							}
 
 							//send to greater than leaf set
 							for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
-								if(nodeBlacklist.contains(HexConverter.convertBytesToHex(entry.getKey()))) {
+								if(nodeBlacklist.contains(entry.getValue())) {
 									continue;
 								} else {
-									nodeBlacklist.add(HexConverter.convertBytesToHex(entry.getKey()));
+									nodeBlacklist.add(entry.getValue());
 								}
 
+								//find longest prefix match
+								String nodeIDStr = HexConverter.convertBytesToHex(entry.getKey());
+								int i=0;
+								for(i=0; i<4; i++) {
+									if(idStr.charAt(i) != nodeIDStr.charAt(i)) {
+										break;
+									}
+								}
+
+								//send routing update
 								Socket nodeSocket = new Socket(entry.getValue().getInetAddress(), entry.getValue().getPort());
 								ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
-								nodeOut.writeObject(riMsg);
+								nodeOut.writeObject(new RoutingInfoMsg(getRelevantLeafSet(), i, routingTable[i], false));
 
 								nodeSocket.close();
 							}
 
 							//send to routing table
-							for(Map<String,NodeAddress> map : routingTable) {
+							for(int i=0; i<routingTable.length; i++) {
+								Map<String,NodeAddress> map = routingTable[i];
+
 								for(Entry<String,NodeAddress> entry : map.entrySet()) {
-									if(nodeBlacklist.contains(entry.getKey())) {
+									if(nodeBlacklist.contains(entry.getValue())) {
 										continue;
 									} else {
-										nodeBlacklist.add(entry.getKey());
+										nodeBlacklist.add(entry.getValue());
 									}
 
 									Socket nodeSocket = new Socket(entry.getValue().getInetAddress(), entry.getValue().getPort());
 									ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
-									nodeOut.writeObject(riMsg);
+									nodeOut.writeObject(new RoutingInfoMsg(getRelevantLeafSet(), i, map, false));
 	
 									nodeSocket.close();
+
 								}
 							}
 						}
@@ -573,7 +589,7 @@ public class PastryNode extends Thread {
 					break;
 				case Message.LOOKUP_NODE_MSG:
 					LookupNodeMsg lookupNodeMsg = (LookupNodeMsg) requestMsg;
-					LOGGER.info("Recieved store data message with id '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID()) + "'.");
+					LOGGER.info("Recieved lookup node message with id '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID()) + "'.");
 					if(lookupNodeMsg.getNodeAddress().getInetAddress() == null) {
 						lookupNodeMsg.getNodeAddress().setInetAddress(socket.getInetAddress()); //TODO better way to do this
 					}
@@ -593,16 +609,16 @@ public class PastryNode extends Thread {
 
 					if(forwardAddr == null) {
 						//search for exact prefix match in routing table
-						forwardAddr = searchRoutingTableExact(lookupNodeMsg.getID(), lookupNodeMsg.getLongestPrefixMatch());
+						forwardAddr = searchRoutingTableExact(lookupNodeMsg.getID(), lookupNodeMsg.getPrefixLength());
 						
 						if(forwardAddr != null) {
-							lookupNodeMsg.setLongestPrefixMatch(lookupNodeMsg.getLongestPrefixMatch() + 1);
+							lookupNodeMsg.setLongestPrefixMatch(lookupNodeMsg.getPrefixLength() + 1);
 						}
 					}
 
 					if(forwardAddr == null) {
 						//search clostest value in routing table
-						forwardAddr = searchRoutingTableClosest(lookupNodeMsg.getID(), lookupNodeMsg.getLongestPrefixMatch());
+						forwardAddr = searchRoutingTableClosest(lookupNodeMsg.getID(), lookupNodeMsg.getPrefixLength());
 					}
 
 					if(forwardAddr == null) {
@@ -616,14 +632,10 @@ public class PastryNode extends Thread {
 
 						Socket socket = new Socket(lookupNodeMsg.getNodeAddress().getInetAddress(), lookupNodeMsg.getNodeAddress().getPort());
 						ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-						out.writeObject(new SuccessMsg());
-
-						boolean eof = false;
-						while(!eof) {
-							eof = true;
-						}
-						
+						out.writeObject(new NodeInfoMsg(id, new NodeAddress(null, port)));
 						socket.close();
+
+						//TODO get next message - WriteFileMsg/ReadFileMsg - make it happen
 
 						LOGGER.info("Stored data with hash '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID()) + " under file '" + lookupNodeMsg.getFilename() + "'.");
 						dataStore.put(lookupNodeMsg.getID(), lookupNodeMsg.getFilename());

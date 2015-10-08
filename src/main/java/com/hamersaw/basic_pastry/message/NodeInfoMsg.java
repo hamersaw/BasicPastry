@@ -7,7 +7,6 @@ import com.hamersaw.basic_pastry.NodeAddress;
 public class NodeInfoMsg extends Message {
 	private byte[] id;
 	private NodeAddress nodeAddress;
-	private int port;
 
 	public NodeInfoMsg(byte[] id, NodeAddress nodeAddress) {
 		this.id = id;

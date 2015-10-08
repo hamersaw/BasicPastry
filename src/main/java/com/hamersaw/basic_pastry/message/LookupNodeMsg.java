@@ -6,13 +6,13 @@ public class LookupNodeMsg extends Message {
 	private byte[] id;
 	private NodeAddress nodeAddress;
 	private String filename;
-	private int longestPrefixMatch;
+	private int prefixLength;
 
-	public LookupNodeMsg(byte[] id, String filename, NodeAddress nodeAddress, int longestPrefixMatch) {
+	public LookupNodeMsg(byte[] id, String filename, NodeAddress nodeAddress, int prefixLength) {
 		this.id = id;
 		this.filename = filename;
 		this.nodeAddress = nodeAddress;
-		this.longestPrefixMatch = longestPrefixMatch;
+		this.prefixLength = prefixLength;
 	}
 
 	public byte[] getID() {
@@ -27,12 +27,12 @@ public class LookupNodeMsg extends Message {
 		return nodeAddress;
 	}
 
-	public void setLongestPrefixMatch(int longestPrefixMatch) {
-		this.longestPrefixMatch = longestPrefixMatch;
+	public void setLongestPrefixMatch(int prefixLength) {
+		this.prefixLength = prefixLength;
 	}
 
-	public int getLongestPrefixMatch() {
-		return longestPrefixMatch;
+	public int getPrefixLength() {
+		return prefixLength;
 	}
 
 	@Override

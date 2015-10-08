@@ -11,7 +11,9 @@ public abstract class Message implements Serializable {
 		NODE_JOIN_MSG = 5,
 		ROUTING_INFO_MSG = 6,
 		LOOKUP_NODE_MSG = 7,
-		REQUEST_RANDOM_NODE_MSG = 8;
+		REQUEST_RANDOM_NODE_MSG = 8,
+		WRITE_FILE_MSG = 9,
+		READ_FILE_MSG = 10;
 	
 	public abstract int getMsgType();
 }
