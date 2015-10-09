@@ -2,7 +2,7 @@ package com.hamersaw.basic_pastry;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
@@ -13,10 +13,12 @@ import java.util.logging.Logger;
 import java.util.Scanner;
 
 import com.hamersaw.basic_pastry.message.ErrorMsg;
+import com.hamersaw.basic_pastry.message.LookupNodeMsg;
 import com.hamersaw.basic_pastry.message.Message;
 import com.hamersaw.basic_pastry.message.NodeInfoMsg;
+import com.hamersaw.basic_pastry.message.ReadDataMsg;
 import com.hamersaw.basic_pastry.message.RequestRandomNodeMsg;
-import com.hamersaw.basic_pastry.message.LookupNodeMsg;
+import com.hamersaw.basic_pastry.message.WriteDataMsg;
 
 public class StoreData {
 	private static final Logger LOGGER = Logger.getLogger(StoreData.class.getCanonicalName());
@@ -37,105 +39,156 @@ public class StoreData {
 
 		String input = "";
 		Scanner scanner = new Scanner(System.in);
-		while(!input.equalsIgnoreCase("q")) {
+		while(true) {
 			try {
 				System.out.print("Options\nS) Store File\nR) Retrieve File\nQ) Quit\nInput:");
 				input = scanner.nextLine();
 
+				if(input.equalsIgnoreCase("Q")) {
+					break;
+				} else if(!input.equalsIgnoreCase("S") && !input.equalsIgnoreCase("R")) {
+					LOGGER.severe("Unknown input. Please reenter.");
+					continue;
+				}
+
+				//read in the filename
+				byte[] id = null;
+				System.out.print("\tFilename:");
+				File file = new File(scanner.nextLine());
+
+				//read in id
+				System.out.print("\tID (leave blank to auto generate one):");
+				String idStr = scanner.nextLine();
+				if(!idStr.equals("")) {
+					id = HexConverter.convertHexToBytes(idStr);
+				} else {
+					short idValue = (short) (file.getName().hashCode() % (int)Short.MAX_VALUE);
+					id = new byte[2];
+					id[0] = (byte) (idValue & 0xff);
+					id[1] = (byte) ((idValue >> 8) & 0xff);
+				}
+
+				//get random node
+				NodeAddress seedNodeAddress = getRandomNode(discoveryNodeAddr, discoveryNodePort);
+
+				//lookup id in cluster
+				NodeAddress nodeAddress = lookupNode(id, seedNodeAddress, port);
+
 				if(input.equalsIgnoreCase("S")) {
-					//read in filename
-					String filename;
-					FileInputStream fileInputStream;
-					long dataLength;
-					byte[] id = null;
-					try {
-						//read in the filename
-						System.out.print("\tFilename:");
-						filename = scanner.nextLine();
-						File file = new File(filename);
-						dataLength = file.length();
-						fileInputStream = new FileInputStream(file);
-
-						//get id
-						System.out.print("\tID (leave blank to auto generate one):");
-						String idStr = scanner.nextLine();
-						if(!idStr.equals("")) {
-							id = HexConverter.convertHexToBytes(idStr);
-						}
-					} catch(FileNotFoundException e) {
-						System.out.println("File not found.");
-						continue;
-					} catch(Exception e) {
-						e.printStackTrace();
-						continue;
+					if(!file.exists()) {
+						throw new Exception("File '" + file.getName() + "' does not exist.");
 					}
 
-					//if id not supplied generate one	
-					if(id == null) {
-						//TODO generate id based on file hash (name, content, etc)?
-					}
-
-					//contact discovery node to get a random node to start with
-					RequestRandomNodeMsg requestRandomNodeMsg = new RequestRandomNodeMsg();
-					Socket socket = new Socket(discoveryNodeAddr, discoveryNodePort);
-					ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-					out.writeObject(requestRandomNodeMsg);
-
-					ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-					Message replyMsg = (Message) in.readObject();
-					socket.close();
-
-					//parse reply message
-					if(replyMsg.getMsgType() == Message.ERROR_MSG) {
-						LOGGER.severe(((ErrorMsg)replyMsg).getMsg());
-						return;
-					} else if(replyMsg.getMsgType() != Message.NODE_INFO_MSG) {
-						LOGGER.severe("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
+					//read data into buffer
+					FileInputStream in = new FileInputStream(file);
+					byte[] data = new byte[(int)file.length()];
+					if(in.read(data) != data.length) {
+						LOGGER.severe("Error reading data into buffer.");
 						return;
 					}
 
-					//start up a server socket to accept the connection
-					ServerSocket serverSocket = new ServerSocket(port);
-
-					//send store data message to random node
-					NodeInfoMsg nodeInfoMsg = (NodeInfoMsg) replyMsg;
-					LookupNodeMsg lookupNodeMsg = new LookupNodeMsg(id, filename, new NodeAddress(null, port), 0);
-					Socket nodeSocket = new Socket(nodeInfoMsg.getNodeAddress().getInetAddress(), nodeInfoMsg.getNodeAddress().getPort());
-					ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
-					nodeOut.writeObject(lookupNodeMsg);
-				
-					nodeSocket.close();
-
-					//receive connection on server socket from node where data should reside
-					nodeSocket = serverSocket.accept();
-					in = new ObjectInputStream(nodeSocket.getInputStream());
-					replyMsg = (Message) in.readObject();
-
-					//ensure we get a success message
-					if(replyMsg.getMsgType() == Message.ERROR_MSG) {
-						LOGGER.severe(((ErrorMsg)replyMsg).getMsg());
-						return;
-					} else if(replyMsg.getMsgType() != Message.NODE_INFO_MSG) {
-						LOGGER.severe("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
-						return;
-					}
+					in.close();
 
 					//write data to the node
-					nodeInfoMsg = (NodeInfoMsg) replyMsg;
-					
+					WriteDataMsg writeDataMsg = new WriteDataMsg(id, data);
+					Socket socket = new Socket(nodeAddress.getInetAddress(), nodeAddress.getPort());
+					ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+					out.writeObject(writeDataMsg);
 
-					//send parts of the file in different chunks
-					LOGGER.info("TODO send file data over");
-
-					System.out.println("Store File not yet implemented");
+					socket.close();
+					LOGGER.info("Sent data with id '" + HexConverter.convertBytesToHex(id) + "' to node " + nodeAddress + ".");
 				} else if(input.equalsIgnoreCase("R")) {
-					System.out.println("Retrieve File not yet implemented");
+					//read in storage directory
+					System.out.print("\tStorage Directory:");
+					file = new File(scanner.nextLine() + File.separator + file.getName());
+					file.getParentFile().mkdirs();
+
+					//request file from node
+					ReadDataMsg readDataMsg = new ReadDataMsg(id);
+					Socket socket = new Socket(nodeAddress.getInetAddress(), nodeAddress.getPort());
+					ObjectOutputStream socketOut = new ObjectOutputStream(socket.getOutputStream());
+					socketOut.writeObject(readDataMsg);
+
+					//parse reply message
+					Message replyMsg = (Message) new ObjectInputStream(socket.getInputStream()).readObject();
+					socket.close();
+
+					if(replyMsg.getMsgType() == Message.ERROR_MSG) {
+						throw new Exception(((ErrorMsg)replyMsg).getMsg());
+					} else if(replyMsg.getMsgType() != Message.WRITE_DATA_MSG) {
+						throw new Exception("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
+					}
+
+					WriteDataMsg writeDataMsg = (WriteDataMsg) replyMsg;
+
+					//write file contents
+					FileOutputStream out = new FileOutputStream(file);
+					for(byte b : writeDataMsg.getData()) {
+						out.write(b);
+					}
+
+					out.close();
+					LOGGER.info("Wrote data to file '" + file.getCanonicalPath() + "'.");
 				} else if(!input.equalsIgnoreCase("Q")) {
-					System.out.println("Unknown input. Please reenter.");
+					LOGGER.severe("Unknown input. Please reenter.");
 				}
 			} catch(Exception e) {
+				e.printStackTrace();
 				LOGGER.severe(e.getMessage());
 			}
 		}
+	}
+
+	public static NodeAddress getRandomNode(String discoveryNodeAddr, int discoveryNodePort) throws Exception {
+		RequestRandomNodeMsg requestRandomNodeMsg = new RequestRandomNodeMsg();
+		Socket socket = new Socket(discoveryNodeAddr, discoveryNodePort);
+		ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+		out.writeObject(requestRandomNodeMsg);
+
+		Message replyMsg = (Message) new ObjectInputStream(socket.getInputStream()).readObject();
+		socket.close();
+
+		//parse reply message
+		if(replyMsg.getMsgType() == Message.ERROR_MSG) {
+			throw new Exception(((ErrorMsg)replyMsg).getMsg());
+		} else if(replyMsg.getMsgType() != Message.NODE_INFO_MSG) {
+			throw new Exception("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
+		}
+
+		return ((NodeInfoMsg)replyMsg).getNodeAddress();
+	}
+
+	public static NodeAddress lookupNode(byte[] id, NodeAddress seedNodeAddress, int serverPort) throws Exception {
+		//start up a server socket to accept the connection
+		ServerSocket serverSocket = new ServerSocket(serverPort);
+
+		//send store data message to random node
+		LookupNodeMsg lookupNodeMsg = new LookupNodeMsg(id, new NodeAddress(null, serverPort), 0);
+		Socket seedSocket = new Socket(seedNodeAddress.getInetAddress(), seedNodeAddress.getPort());
+		ObjectOutputStream seedOut = new ObjectOutputStream(seedSocket.getOutputStream());
+		seedOut.writeObject(lookupNodeMsg);
+	
+		seedSocket.close();
+
+		//receive connection on server socket from node where data should reside
+		Socket nodeSocket = serverSocket.accept();
+		Message replyMsg = (Message) new ObjectInputStream(nodeSocket.getInputStream()).readObject();
+
+		//ensure we get a node info message
+		if(replyMsg.getMsgType() == Message.ERROR_MSG) {
+			throw new Exception(((ErrorMsg)replyMsg).getMsg());
+		} else if(replyMsg.getMsgType() != Message.NODE_INFO_MSG) {
+			throw new Exception("Recieved an unexpected message type '" + replyMsg.getMsgType() + "'.");
+		}
+
+		//parse reply message
+		NodeInfoMsg nodeInfoMsg = (NodeInfoMsg) replyMsg;
+		if(nodeInfoMsg.getNodeAddress().getInetAddress() == null) {
+			nodeInfoMsg.getNodeAddress().setInetAddress(nodeSocket.getInetAddress());
+		}
+
+		serverSocket.close();
+		nodeSocket.close();
+		return nodeInfoMsg.getNodeAddress();
 	}
 }

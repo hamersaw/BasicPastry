@@ -141,6 +141,20 @@ public class DiscoveryNode extends Thread {
 		}
 	}
 
+	protected void printActiveNodes() {
+		readWriteLock.readLock().lock();
+		try {
+			StringBuilder str = new StringBuilder("----ACTIVE NODES----");
+			for(Entry<byte[],NodeAddress> entry : nodes.entrySet()) {
+				str.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + " : " + entry.getValue());	
+			}
+			str.append("\n--------------------");
+			LOGGER.info(str.toString());
+		} finally {
+			readWriteLock.readLock().unlock();
+		}
+	}
+
 	private class DiscoveryNodeWorker extends Thread{
 		protected Socket socket;
 
@@ -177,6 +191,8 @@ public class DiscoveryNode extends Thread {
 					} catch(Exception e) {
 						replyMsg = new ErrorMsg(e.getMessage());
 					}
+
+					printActiveNodes();
 					break;
 				case Message.REMOVE_NODE_MSG:
 					RemoveNodeMsg removeNodeMsg = (RemoveNodeMsg) requestMsg;
@@ -187,6 +203,8 @@ public class DiscoveryNode extends Thread {
 					} catch(Exception e) {
 						replyMsg = new ErrorMsg(e.getMessage());
 					}
+
+					printActiveNodes();
 					break;
 				case Message.REQUEST_RANDOM_NODE_MSG:
 					try {

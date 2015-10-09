@@ -1,5 +1,8 @@
 package com.hamersaw.basic_pastry;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
@@ -26,9 +29,11 @@ import com.hamersaw.basic_pastry.message.LookupNodeMsg;
 import com.hamersaw.basic_pastry.message.Message;
 import com.hamersaw.basic_pastry.message.NodeJoinMsg;
 import com.hamersaw.basic_pastry.message.NodeInfoMsg;
+import com.hamersaw.basic_pastry.message.ReadDataMsg;
 import com.hamersaw.basic_pastry.message.RegisterNodeMsg;
 import com.hamersaw.basic_pastry.message.RoutingInfoMsg;
 import com.hamersaw.basic_pastry.message.SuccessMsg;
+import com.hamersaw.basic_pastry.message.WriteDataMsg;
 
 public class PastryNode extends Thread {
 	private static final Logger LOGGER = Logger.getLogger(PastryNode.class.getCanonicalName());
@@ -36,17 +41,18 @@ public class PastryNode extends Thread {
 	public static int MAX_LEAF_SET_SIZE = 1;
 	protected byte[] id;
 	protected short idValue;
-	protected String idStr, discoveryNodeAddress;
+	protected String idStr, storageDir, discoveryNodeAddress;
 	protected int discoveryNodePort, port;
 	protected SortedMap<byte[],NodeAddress> lessThanLS, greaterThanLS;
 	protected Map<String,NodeAddress>[] routingTable;
-	protected Map<byte[],String> dataStore;
+	protected List<String> dataStore;
 	protected ReadWriteLock readWriteLock;
 
-	public PastryNode(byte[] id, String discoveryNodeAddress, int discoveryNodePort, int port) {
+	public PastryNode(byte[] id, String storageDir, String discoveryNodeAddress, int discoveryNodePort, int port) {
 		this.id = id;
 		idValue = convertBytesToShort(this.id);
 		idStr = HexConverter.convertBytesToHex(id);
+		this.storageDir = storageDir;
 		this.discoveryNodeAddress = discoveryNodeAddress;
 		this.discoveryNodePort = discoveryNodePort;
 		this.port = port;
@@ -92,7 +98,7 @@ public class PastryNode extends Thread {
 			routingTable[i] = new HashMap();
 		}
 
-		dataStore = new HashMap();
+		dataStore = new LinkedList();
 
 		//initialize locking mechanize
 		readWriteLock = new ReentrantReadWriteLock();
@@ -100,12 +106,13 @@ public class PastryNode extends Thread {
 
 	public static void main(String[] args) {
 		try {
-			String discoveryNodeAddress = args[0];
-			int discoveryNodePort = Integer.parseInt(args[1]);
-			int port = Integer.parseInt(args[2]);
-			byte[] id = args.length == 4 ? HexConverter.convertHexToBytes(args[3]) : generateRandomID(ID_BYTES);
+			String storageDir = args[0];
+			String discoveryNodeAddress = args[1];
+			int discoveryNodePort = Integer.parseInt(args[2]);
+			int port = Integer.parseInt(args[3]);
+			byte[] id = args.length == 5 ? HexConverter.convertHexToBytes(args[4]) : generateRandomID(ID_BYTES);
 
-			new Thread(new PastryNode(id, discoveryNodeAddress, discoveryNodePort, port)).start();
+			new Thread(new PastryNode(id, storageDir, discoveryNodeAddress, discoveryNodePort, port)).start();
 		} catch(Exception e) {
 			LOGGER.severe(e.getMessage());
 			System.out.println("Usage: PastryNode discoveryNodeAddress discoveryNodePort port [id]");
@@ -628,17 +635,12 @@ public class PastryNode extends Thread {
 
 					if(forwardAddr.getInetAddress() == null) {
 						//this is the node where data needs to reside
-						LOGGER.info("TODO this is the node that will hold the data. Send response to '" + lookupNodeMsg.getNodeAddress() + "'");
+						LOGGER.info("Found closest node. Send response to '" + lookupNodeMsg.getNodeAddress() + "'");
 
 						Socket socket = new Socket(lookupNodeMsg.getNodeAddress().getInetAddress(), lookupNodeMsg.getNodeAddress().getPort());
 						ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
 						out.writeObject(new NodeInfoMsg(id, new NodeAddress(null, port)));
 						socket.close();
-
-						//TODO get next message - WriteFileMsg/ReadFileMsg - make it happen
-
-						LOGGER.info("Stored data with hash '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID()) + " under file '" + lookupNodeMsg.getFilename() + "'.");
-						dataStore.put(lookupNodeMsg.getID(), lookupNodeMsg.getFilename());
 					} else {
 						//forward request to the correct node
 						LOGGER.info("Forwarding store data message to node '" + forwardAddr + "'.");
@@ -649,6 +651,46 @@ public class PastryNode extends Thread {
 						socket.close();
 					}
 
+					break;
+				case Message.WRITE_DATA_MSG:
+					WriteDataMsg writeDataMsg = (WriteDataMsg) requestMsg;
+					String writeDataID = HexConverter.convertBytesToHex(writeDataMsg.getID());
+					
+					//write data to disk
+					File writeFile = new File(storageDir + File.separator + writeDataID);
+					writeFile.getParentFile().mkdirs();
+					FileOutputStream out = new FileOutputStream(writeFile);
+					for(byte b : writeDataMsg.getData()) {
+						out.write(b);
+					}
+					out.close();
+
+					//add id to datastore structure
+					dataStore.add(writeDataID);
+					LOGGER.info("Wrote data with id '" + writeDataID + "'.");
+					break;
+				case Message.READ_DATA_MSG:
+					ReadDataMsg readDataMsg = (ReadDataMsg) requestMsg;
+					String readDataID = HexConverter.convertBytesToHex(readDataMsg.getID());
+
+					//check if datastore contains readDataID
+					if(!dataStore.contains(readDataID)) {
+						replyMsg = new ErrorMsg("Node does not contain data with id '" + readDataID + "'.");
+					} else {
+						//read data from disk
+						File readFile = new File(storageDir + File.separator + readDataID);
+						byte[] data = new byte[(int)readFile.length()];
+						FileInputStream fileIn = new FileInputStream(readFile);
+						if(fileIn.read(data) != readFile.length()) {
+							replyMsg = new ErrorMsg("Error reading data.");
+						} else {
+							replyMsg = new WriteDataMsg(readDataMsg.getID(), data);
+						}
+
+						fileIn.close();
+					}
+
+					LOGGER.info("Read data with id '" + readDataID + "'.");
 					break;
 				default:
 					LOGGER.severe("Unrecognized request message type '" + requestMsg.getMsgType() + "'");
