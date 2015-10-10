@@ -514,9 +514,9 @@ public class PastryNode extends Thread {
 						readWriteLock.readLock().unlock();
 					}
 
-					//if this is a message from the closest node send routing information to every node in leaf set
 					readWriteLock.readLock().lock();
 					try {
+						//if this is a message from the closest node send routing information to every node in leaf set
 						if(routingInfoMsg.getBroadcastMsg()) {
 							List<NodeAddress> nodeBlacklist = new LinkedList();
 
@@ -588,6 +588,54 @@ public class PastryNode extends Thread {
 									nodeSocket.close();
 
 								}
+							}
+						}
+
+						//transfer data to other nodes if needed
+						for(String dataID : dataStore) {
+							short dataIDValue = convertBytesToShort(HexConverter.convertHexToBytes(dataID));
+							int minDistance = Math.min(lessThanDistance(idValue, dataIDValue), greaterThanDistance(idValue, dataIDValue));
+							NodeAddress forwardNodeAddress = null;
+
+							//check less than leaf set
+							for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
+								short nodeIDValue = convertBytesToShort(entry.getKey());
+								int distance = Math.min(lessThanDistance(dataIDValue, nodeIDValue), greaterThanDistance(dataIDValue, nodeIDValue)); 
+								if(distance < minDistance) {
+									minDistance = distance;
+									forwardNodeAddress = entry.getValue();
+								}
+							}
+
+							//check greater than leaf set
+							for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
+								short nodeIDValue = convertBytesToShort(entry.getKey());
+								int distance = Math.min(lessThanDistance(dataIDValue, nodeIDValue), greaterThanDistance(dataIDValue, nodeIDValue)); 
+								if(distance < minDistance) {
+									minDistance = distance;
+									forwardNodeAddress = entry.getValue();
+								}
+							}
+
+							if(forwardNodeAddress != null) {
+								//read file
+								File file = new File(storageDir + File.separator + dataID);
+								byte[] data = new byte[(int)file.length()];
+								FileInputStream fileIn = new FileInputStream(file);
+								if(fileIn.read(data) != data.length) {
+									throw new Exception("Unknown error reading file.");
+								}
+
+								fileIn.close();
+
+								//send write data message to node
+								LOGGER.info("Forwarding data with id '" + dataID + "' to node " + forwardNodeAddress + ".");
+								Socket forwardSocket = new Socket(forwardNodeAddress.getInetAddress(), forwardNodeAddress.getPort());
+								ObjectOutputStream forwardOut = new ObjectOutputStream(forwardSocket.getOutputStream());
+								forwardOut.writeObject(new WriteDataMsg(HexConverter.convertHexToBytes(dataID), data));
+
+								forwardSocket.close();
+								file.delete();
 							}
 						}
 					} finally {
