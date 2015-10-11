@@ -33,17 +33,43 @@ then
 	exit 1
 fi
 
-#TODO startup discovery node on remove machine
+let NUM_NODES+=1
 
-for line in `cat $MACHINE_FILE`
+#start discovery node
+DNODE_INDEX=$(( ( RANDOM % $NUM_NODES ) ))
+INDEX=0
+DNODE_MACHINE=""
+for MACHINE in `cat $MACHINE_FILE`
 do
-	if [ "$NUM_NODES" -le "0" ]
+	if [ "$INDEX" -eq "$DNODE_INDEX" ]
 	then
+		ssh -f rammerd@madison.cs.colostate.edu "ls > Documents/$MACHINE.txt &"
+		ssh -f rammerd@madison.cs.colostate.edu "echo $!" > "processes/$MACHINE.txt"
+
+		echo "started discovery node on machine $MACHINE"
+		DNODE_MACHINE=$MACHINE
 		break
 	fi
 
-	#TODO start pastry node on remote machine
-	echo $line
+	let INDEX+=1
+done
 
-	let NUM_NODES-=1
+#start pastry nodes
+let INDEX=0
+for MACHINE in `cat $MACHINE_FILE`
+do
+	if [ "$INDEX" -eq "$NUM_NODES" ]
+	then
+		break
+	elif [ "$INDEX" -ne "$DNODE_INDEX" ]
+	then
+		#TODO start pastry node on remote machine
+		echo "TODO start pastry node on machine $MACHINE"
+
+		#write pid to file
+
+		sleep 5
+	fi
+
+	let INDEX+=1
 done
