@@ -385,6 +385,34 @@ public class PastryNode extends Thread {
 		}
 	}
 
+	protected void printRoutingInfo() {
+		readWriteLock.readLock().lock();
+		try {
+			StringBuilder routingInfo = new StringBuilder("----LEAF SET----");
+			for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
+				routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+			}
+			routingInfo.append("\n" + HexConverter.convertBytesToHex(id) + ":" + convertBytesToShort(id) + " - " + port);
+			for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
+				routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
+			}
+			routingInfo.append("\n----------------");
+
+			routingInfo.append("\n----ROUTING TABLE----");
+			for(int i=0; i<routingTable.length; i++) {
+				Map<String,NodeAddress> map = routingTable[i];
+				routingInfo.append("\nprefix length:" + i);
+				for(Entry<String,NodeAddress> entry : map.entrySet()) {
+					routingInfo.append("\n\t" + entry.getKey() + " : " + entry.getValue());
+				}
+			}
+			routingInfo.append("\n---------------------");
+			LOGGER.info(routingInfo.toString());
+		} finally {
+			readWriteLock.readLock().unlock();
+		}
+	}
+
 	protected class PastryNodeWorker extends Thread{
 		protected Socket socket;
 
@@ -488,31 +516,7 @@ public class PastryNode extends Thread {
 					}
 
 					//print out leaf set and routing table
-					readWriteLock.readLock().lock();
-					try {
-						StringBuilder routingInfo = new StringBuilder("----LEAF SET----");
-						for(Entry<byte[],NodeAddress> entry : lessThanLS.entrySet()) {
-							routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
-						}
-						routingInfo.append("\n" + HexConverter.convertBytesToHex(id) + ":" + convertBytesToShort(id) + " - " + port);
-						for(Entry<byte[],NodeAddress> entry : greaterThanLS.entrySet()) {
-							routingInfo.append("\n" + HexConverter.convertBytesToHex(entry.getKey()) + ":" + convertBytesToShort(entry.getKey()) + " - " + entry.getValue());
-						}
-						routingInfo.append("\n----------------");
-
-						routingInfo.append("\n----ROUTING TABLE----");
-						for(int i=0; i<routingTable.length; i++) {
-							Map<String,NodeAddress> map = routingTable[i];
-							routingInfo.append("\nprefix length:" + i);
-							for(Entry<String,NodeAddress> entry : map.entrySet()) {
-								routingInfo.append("\n\t" + entry.getKey() + " : " + entry.getValue());
-							}
-						}
-						routingInfo.append("\n---------------------");
-						LOGGER.info(routingInfo.toString());
-					} finally {
-						readWriteLock.readLock().unlock();
-					}
+					printRoutingInfo();
 
 					readWriteLock.readLock().lock();
 					try {

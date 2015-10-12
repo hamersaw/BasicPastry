@@ -14,11 +14,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.Scanner;
 
 import com.hamersaw.basic_pastry.message.ErrorMsg;
 import com.hamersaw.basic_pastry.message.Message;
 import com.hamersaw.basic_pastry.message.NodeInfoMsg;
-import com.hamersaw.basic_pastry.message.RemoveNodeMsg;
 import com.hamersaw.basic_pastry.message.RegisterNodeMsg;
 import com.hamersaw.basic_pastry.message.RequestRandomNodeMsg;
 import com.hamersaw.basic_pastry.message.SuccessMsg;
@@ -113,34 +113,6 @@ public class DiscoveryNode extends Thread {
 		}
 	}
 
-	protected void removeNode(byte[] id, NodeAddress nodeAddress) throws Exception {
-		readWriteLock.writeLock().lock();
-		try {
-			//search for matching id
-			byte[] removeArray = null;
-			for(byte[] array : nodes.keySet()) {
-				if(java.util.Arrays.equals(array, id)) {
-					removeArray = array;
-				}
-			}
-
-			if(removeArray == null) {
-				throw new Exception("Unable to remove node. ID '" + HexConverter.convertBytesToHex(id) + "' not found.");
-			} else {
-				//check if inet address is matching
-				if(!nodes.get(removeArray).equals(nodeAddress)) {
-					throw new Exception("Unable to remove node. Requesting node address does not match stored address.");
-				} else {
-					//remove node
-					nodes.remove(removeArray);
-					LOGGER.info("Removed ID '" + HexConverter.convertBytesToHex(id) + "' for node at '" + nodeAddress + "'.");
-				}
-			}
-		} finally {
-			readWriteLock.writeLock().unlock();
-		}
-	}
-
 	protected void printActiveNodes() {
 		readWriteLock.readLock().lock();
 		try {
@@ -155,7 +127,7 @@ public class DiscoveryNode extends Thread {
 		}
 	}
 
-	private class DiscoveryNodeWorker extends Thread{
+	private class DiscoveryNodeWorker extends Thread {
 		protected Socket socket;
 
 		public DiscoveryNodeWorker(Socket socket) {
@@ -175,7 +147,7 @@ public class DiscoveryNode extends Thread {
 					RegisterNodeMsg registerNodeMsg = (RegisterNodeMsg) requestMsg;
 
 					try {
-						byte[] id = getRandomNode(); //getting random node before so we don't ahve to worry about blacklisting the node we're adding
+						byte[] id = getRandomNode(); //getting random node before so we don't have to worry about blacklisting the node we're adding
 						if(id == null) {
 							replyMsg = new SuccessMsg();
 						} else {
@@ -192,19 +164,9 @@ public class DiscoveryNode extends Thread {
 						replyMsg = new ErrorMsg(e.getMessage());
 					}
 
+					//print out nodes
 					printActiveNodes();
-					break;
-				case Message.REMOVE_NODE_MSG:
-					RemoveNodeMsg removeNodeMsg = (RemoveNodeMsg) requestMsg;
 
-					try {
-						removeNode(removeNodeMsg.getID(), new NodeAddress(socket.getInetAddress(), removeNodeMsg.getPort()));
-						replyMsg = new SuccessMsg();
-					} catch(Exception e) {
-						replyMsg = new ErrorMsg(e.getMessage());
-					}
-
-					printActiveNodes();
 					break;
 				case Message.REQUEST_RANDOM_NODE_MSG:
 					try {

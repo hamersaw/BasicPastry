@@ -43,8 +43,9 @@ for MACHINE in `cat $MACHINE_FILE`
 do
 	if [ "$INDEX" -eq "$DNODE_INDEX" ]
 	then
-		ssh -f rammerd@madison.cs.colostate.edu "ls > Documents/$MACHINE.txt &"
-		ssh -f rammerd@madison.cs.colostate.edu "echo $!" > "processes/$MACHINE.txt"
+		urxvt -e "ssh rammerd@madison.cs.colostate.edu && java -cp Desktop/BasicPastry.jar com.hamersaw.basic_pastry.DiscoveryNode 15605"
+		#ssh -f rammerd@madison.cs.colostate.edu "nohup java -cp Desktop/BasicPastry.jar com.hamersaw.basic_pastry.DiscoveryNode 15605 > Documents/DiscoveryNode$MACHINE.txt &"
+		#ssh -f rammerd@madison.cs.colostate.edu "echo $!" > "processes/$MACHINE.txt"
 
 		echo "started discovery node on machine $MACHINE"
 		DNODE_MACHINE=$MACHINE
