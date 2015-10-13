@@ -5,7 +5,6 @@ MACHINE_FILE=""
 NUM_NODES=25
 while getopts 'hf:n:' flag; do
 	case "${flag}" in
-
 		f)
 			MACHINE_FILE="${OPTARG}"
 			;;
@@ -49,10 +48,10 @@ do
 
 		echo "started discovery node on machine $MACHINE"
 		DNODE_MACHINE=$MACHINE
-		break
-	fi
+	break
+fi
 
-	let INDEX+=1
+let INDEX+=1
 done
 
 #start pastry nodes

@@ -1,18 +1,24 @@
 package com.hamersaw.basic_pastry.message;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import java.net.InetAddress;
+
+import com.hamersaw.basic_pastry.HexConverter;
+import com.hamersaw.basic_pastry.NodeAddress;
 
 public class NodeJoinMsg extends Message {
 	private byte[] id;
 	private int prefixLength;
-	private InetAddress inetAddress;
-	private int port;
+	private NodeAddress nodeAddress;
+	private List<NodeAddress> hops;
 
-	public NodeJoinMsg(byte[] id, int prefixLength,  InetAddress inetAddress, int port) {
+	public NodeJoinMsg(byte[] id, int prefixLength, NodeAddress nodeAddress) {
 		this.id = id;
 		this.prefixLength = prefixLength;
-		this.inetAddress = inetAddress;
-		this.port = port;
+		this.nodeAddress = nodeAddress;
+		hops = new LinkedList();
 	}
 
 	public byte[] getID() {
@@ -27,20 +33,28 @@ public class NodeJoinMsg extends Message {
 		return prefixLength;
 	}
 
-	public void setInetAddress(InetAddress inetAddress) {
-		this.inetAddress = inetAddress;
+	public NodeAddress getNodeAddress() {
+		return nodeAddress;
 	}
 
-	public InetAddress getInetAddress() {
-		return inetAddress;
-	}
-
-	public int getPort() {
-		return port;
+	public void addHop(NodeAddress nodeAddress) {
+		hops.add(nodeAddress);
 	}
 
 	@Override
 	public int getMsgType() {
 		return NODE_JOIN_MSG;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder strBldr = new StringBuilder();
+		strBldr.append("ID:" + HexConverter.convertBytesToHex(id) + " HOPS:" + hops.size() + " ");
+		strBldr.append("PATH:" + nodeAddress.toString());
+		for(NodeAddress nodeAddress : hops) {
+			strBldr.append(" -> " + nodeAddress.toString());
+		}
+
+		return strBldr.toString();
 	}
 }

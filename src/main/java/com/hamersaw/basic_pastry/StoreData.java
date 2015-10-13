@@ -164,11 +164,13 @@ public class StoreData {
 
 		//send store data message to random node
 		LookupNodeMsg lookupNodeMsg = new LookupNodeMsg(id, new NodeAddress(null, serverPort), 0);
+		lookupNodeMsg.addHop(seedNodeAddress);
 		Socket seedSocket = new Socket(seedNodeAddress.getInetAddress(), seedNodeAddress.getPort());
 		ObjectOutputStream seedOut = new ObjectOutputStream(seedSocket.getOutputStream());
 		seedOut.writeObject(lookupNodeMsg);
 	
 		seedSocket.close();
+		LOGGER.info("Sent lookup node message with id '" + HexConverter.convertBytesToHex(id) + "' to node " + seedNodeAddress);
 
 		//receive connection on server socket from node where data should reside
 		Socket nodeSocket = serverSocket.accept();

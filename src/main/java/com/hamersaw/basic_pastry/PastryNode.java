@@ -127,7 +127,7 @@ public class PastryNode extends Thread {
 			//register your id with the discovery node
 			boolean success = false;
 			while(!success) {
-				LOGGER.info("Registering ID '" + HexConverter.convertBytesToHex(id) + "'  to '" + discoveryNodeAddress + ":" + discoveryNodePort + "'");
+				LOGGER.info("Registering ID '" + HexConverter.convertBytesToHex(id) + "' to '" + discoveryNodeAddress + ":" + discoveryNodePort + "'");
 				Socket discoveryNodeSocket = new Socket(discoveryNodeAddress, discoveryNodePort);
 				RegisterNodeMsg registerNodeMsg = new RegisterNodeMsg(id, serverSocket.getInetAddress(), port);
 				ObjectOutputStream out = new ObjectOutputStream(discoveryNodeSocket.getOutputStream());
@@ -144,8 +144,9 @@ public class PastryNode extends Thread {
 					LOGGER.info("Sending node join message to '" + nodeInfoMsg.getNodeAddress().getInetAddress() + ":" + nodeInfoMsg.getNodeAddress().getPort() + "'");
 
 					//send node join message
+					NodeJoinMsg nodeJoinMsg = new NodeJoinMsg(id, 0, new NodeAddress(serverSocket.getInetAddress(), port));
+					nodeJoinMsg.addHop(nodeInfoMsg.getNodeAddress());
 					Socket nodeSocket = new Socket(nodeInfoMsg.getNodeAddress().getInetAddress(), nodeInfoMsg.getNodeAddress().getPort());
-					NodeJoinMsg nodeJoinMsg = new NodeJoinMsg(id, 0, serverSocket.getInetAddress(), port);
 					ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
 					nodeOut.writeObject(nodeJoinMsg);
 
@@ -165,7 +166,6 @@ public class PastryNode extends Thread {
 				}
 			}
 
-			LOGGER.info("Node started successfully");
 			while(true) {
 				Socket socket = serverSocket.accept();
 				LOGGER.fine("Received connection from '" + socket.getInetAddress() + ":" + socket.getPort() + "'.");
@@ -315,13 +315,14 @@ public class PastryNode extends Thread {
 		}
 	}
 
-	protected void updateLeafSet(byte[] addID, NodeAddress nodeAddress) {
+	protected boolean updateLeafSet(byte[] addID, NodeAddress nodeAddress) {
 		LOGGER.finest("updateLeafSet(" + HexConverter.convertBytesToHex(addID) + "," + nodeAddress + ")");
+		boolean changed = false;
 		readWriteLock.writeLock().lock();
 		try {
 			//check if this id belongs to this node
 			if(java.util.Arrays.equals(addID, id)) {
-				return;
+				return changed;
 			}
 
 			short addIDValue = convertBytesToShort(addID);
@@ -330,7 +331,7 @@ public class PastryNode extends Thread {
 			boolean lessThanFound = false;
 			for(byte[] bytes : lessThanLS.keySet()) {
 				if(java.util.Arrays.equals(bytes, addID)) {
-					return;
+					return changed;
 				}
 			}
 
@@ -338,10 +339,12 @@ public class PastryNode extends Thread {
 				if(lessThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more less than nodes
 					LOGGER.fine("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in less than leaf set");
 					lessThanLS.put(addID, nodeAddress);
+					changed = true;
 				} else if(lessThanDistance(addIDValue, idValue) < lessThanDistance(convertBytesToShort(lessThanLS.firstKey()), idValue)) {
 					LOGGER.fine("\tRemoved node " + HexConverter.convertBytesToHex(lessThanLS.firstKey()) + ":" + convertBytesToShort(lessThanLS.firstKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
 					lessThanLS.remove(lessThanLS.firstKey());
 					lessThanLS.put(addID, nodeAddress);
+					changed = true;
 				}
 			}
 
@@ -357,32 +360,39 @@ public class PastryNode extends Thread {
 				if(greaterThanLS.size() < MAX_LEAF_SET_SIZE) { //leaf set can hold more greater than nodes
 					LOGGER.fine("\tAdded node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID) + " because there was open room in greater than leaf set");
 					greaterThanLS.put(addID, nodeAddress);
+					changed = true;
 				} else if(greaterThanDistance(addIDValue, idValue) < greaterThanDistance(convertBytesToShort(greaterThanLS.lastKey()), idValue)) {
 					LOGGER.fine("\tRemoved node " + HexConverter.convertBytesToHex(greaterThanLS.lastKey()) + ":" + convertBytesToShort(greaterThanLS.lastKey()) + " to add node " + HexConverter.convertBytesToHex(addID) + ":" + convertBytesToShort(addID));
 					greaterThanLS.remove(greaterThanLS.lastKey());
 					greaterThanLS.put(addID, nodeAddress);
+					changed = true;
 				}
 			}
 		} finally {
 			readWriteLock.writeLock().unlock();
 		}
+
+		return changed;
 	}
 
-	protected void updateRoutingTable(String addIDStr, NodeAddress nodeAddress, int prefixLength) {
+	protected boolean updateRoutingTable(String addIDStr, NodeAddress nodeAddress, int prefixLength) {
 		readWriteLock.writeLock().lock();
 		try {
 			//check if this is this node
 			if(idStr.substring(prefixLength, prefixLength+1).equals(addIDStr)) {
-				return;
+				return false;
 			}
 
 			//add entry to routing table
 			if(!routingTable[prefixLength].containsKey(addIDStr)) {
 				routingTable[prefixLength].put(addIDStr, nodeAddress);
+				return true;
 			}
 		} finally {
 			readWriteLock.writeLock().unlock();
 		}
+
+		return false;
 	}
 
 	protected void printRoutingInfo() {
@@ -413,6 +423,14 @@ public class PastryNode extends Thread {
 		}
 	}
 
+	protected String getFilename(String storageDirectory, String filename) {
+		if(filename.charAt(0) == File.separatorChar) {
+			return storageDirectory + filename;
+		} else {
+			return storageDirectory + File.separatorChar + filename;
+		}
+	}
+
 	protected class PastryNodeWorker extends Thread{
 		protected Socket socket;
 
@@ -430,11 +448,11 @@ public class PastryNode extends Thread {
 				Message replyMsg = null;
 				switch(requestMsg.getMsgType()) {
 				case Message.NODE_JOIN_MSG:
-					LOGGER.info("Recieved node join message.");
 					NodeJoinMsg nodeJoinMsg = (NodeJoinMsg) requestMsg;
-					if(nodeJoinMsg.getInetAddress() == null) {
-						nodeJoinMsg.setInetAddress(socket.getInetAddress()); //TODO don't like doing this but i don't know a better way
+					if(nodeJoinMsg.getNodeAddress().getInetAddress() == null) {
+						nodeJoinMsg.getNodeAddress().setInetAddress(socket.getInetAddress()); //TODO don't like doing this but i don't know a better way
 					}
+					LOGGER.info("Recieved node join message '" + nodeJoinMsg.toString() + "'.");
 					int p = nodeJoinMsg.getPrefixLength();
 
 					//search for an exact match in the routing table
@@ -455,7 +473,7 @@ public class PastryNode extends Thread {
 					}
 
 					//send routing information to joining node
-					Socket joinNodeSocket = new Socket(nodeJoinMsg.getInetAddress(), nodeJoinMsg.getPort());
+					Socket joinNodeSocket = new Socket(nodeJoinMsg.getNodeAddress().getInetAddress(), nodeJoinMsg.getNodeAddress().getPort());
 					ObjectOutputStream joinNodeOut = new ObjectOutputStream(joinNodeSocket.getOutputStream());
 					joinNodeOut.writeObject(
 						new RoutingInfoMsg(
@@ -470,7 +488,8 @@ public class PastryNode extends Thread {
 
 					//if we found a closer node forward the node join message
 					if(nodeAddress.getInetAddress() != null) {
-						LOGGER.info("Forwarding node join to '" + nodeAddress + "'");
+						LOGGER.info("Forwarding node join message with id '" + HexConverter.convertBytesToHex(nodeJoinMsg.getID()) + "' to '" + nodeAddress + "'");
+						nodeJoinMsg.addHop(nodeAddress);
 						Socket nodeSocket = new Socket(nodeAddress.getInetAddress(), nodeAddress.getPort());
 						ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
 						nodeOut.writeObject(nodeJoinMsg);
@@ -480,15 +499,16 @@ public class PastryNode extends Thread {
 					break;
 				case Message.ROUTING_INFO_MSG:
 					RoutingInfoMsg routingInfoMsg = (RoutingInfoMsg) requestMsg;
-					LOGGER.info("Recieved routing info message with " + routingInfoMsg.getLeafSet().size() + " routes.");
+					LOGGER.fine("Recieved routing info message with " + routingInfoMsg.getLeafSet().size() + " routes.");
+					boolean changed = false;
 
 					//loop through leaf set
 					for(Entry<byte[],NodeAddress> entry : routingInfoMsg.getLeafSet().entrySet()) {
 						//update leaf set
 						if(entry.getValue().getInetAddress() == null) {
-							updateLeafSet(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()));
+							changed = updateLeafSet(entry.getKey(), new NodeAddress(socket.getInetAddress(), entry.getValue().getPort())) || changed;
 						} else {
-							updateLeafSet(entry.getKey(), entry.getValue());
+							changed = updateLeafSet(entry.getKey(), entry.getValue()) || changed;
 						}
 
 						//update routing table
@@ -503,20 +523,22 @@ public class PastryNode extends Thread {
 							}
 
 							if(entry.getValue().getInetAddress() == null) {
-								updateRoutingTable(nodeIDStr, new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()), i);
+								changed = updateRoutingTable(nodeIDStr, new NodeAddress(socket.getInetAddress(), entry.getValue().getPort()), i) || changed;
 							} else {
-								updateRoutingTable(nodeIDStr, entry.getValue(), i);
+								changed = updateRoutingTable(nodeIDStr, entry.getValue(), i) || changed;
 							}
 						}
 					}
 
 					//update routing table
 					for(Entry<String,NodeAddress> entry : routingInfoMsg.getRoutingTable().entrySet()) {
-						updateRoutingTable(entry.getKey(), entry.getValue(), routingInfoMsg.getPrefixLength());
+						changed = updateRoutingTable(entry.getKey(), entry.getValue(), routingInfoMsg.getPrefixLength()) || changed;
 					}
 
 					//print out leaf set and routing table
-					printRoutingInfo();
+					if(changed) {
+						printRoutingInfo();
+					}
 
 					readWriteLock.readLock().lock();
 					try {
@@ -623,7 +645,7 @@ public class PastryNode extends Thread {
 
 							if(forwardNodeAddress != null) {
 								//read file
-								File file = new File(storageDir + File.separator + dataID);
+								File file = new File(getFilename(storageDir,dataID));
 								byte[] data = new byte[(int)file.length()];
 								FileInputStream fileIn = new FileInputStream(file);
 								if(fileIn.read(data) != data.length) {
@@ -648,11 +670,11 @@ public class PastryNode extends Thread {
 					break;
 				case Message.LOOKUP_NODE_MSG:
 					LookupNodeMsg lookupNodeMsg = (LookupNodeMsg) requestMsg;
-					LOGGER.info("Recieved lookup node message with id '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID()) + "'.");
 					if(lookupNodeMsg.getNodeAddress().getInetAddress() == null) {
 						lookupNodeMsg.getNodeAddress().setInetAddress(socket.getInetAddress()); //TODO better way to do this
 					}
 
+					LOGGER.info("Recieved lookup node message '" + lookupNodeMsg.toString() + "'");
 					NodeAddress forwardAddr = null;
 
 					//check if data belongs in leaf set
@@ -687,7 +709,7 @@ public class PastryNode extends Thread {
 
 					if(forwardAddr.getInetAddress() == null) {
 						//this is the node where data needs to reside
-						LOGGER.info("Found closest node. Send response to '" + lookupNodeMsg.getNodeAddress() + "'");
+						LOGGER.info("This is the closest node. Send response to '" + lookupNodeMsg.getNodeAddress() + "'");
 
 						Socket socket = new Socket(lookupNodeMsg.getNodeAddress().getInetAddress(), lookupNodeMsg.getNodeAddress().getPort());
 						ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
@@ -695,7 +717,8 @@ public class PastryNode extends Thread {
 						socket.close();
 					} else {
 						//forward request to the correct node
-						LOGGER.info("Forwarding store data message to node '" + forwardAddr + "'.");
+						lookupNodeMsg.addHop(forwardAddr);
+						LOGGER.info("Forwarding lookup node message for id '" + HexConverter.convertBytesToHex(lookupNodeMsg.getID())+ "' to node '" + forwardAddr + "'.");
 						Socket socket = new Socket(forwardAddr.getInetAddress(), forwardAddr.getPort());
 						ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
 						out.writeObject(lookupNodeMsg);
@@ -709,7 +732,7 @@ public class PastryNode extends Thread {
 					String writeDataID = HexConverter.convertBytesToHex(writeDataMsg.getID());
 					
 					//write data to disk
-					File writeFile = new File(storageDir + File.separator + writeDataID);
+					File writeFile = new File(getFilename(storageDir, writeDataID));
 					writeFile.getParentFile().mkdirs();
 					FileOutputStream out = new FileOutputStream(writeFile);
 					for(byte b : writeDataMsg.getData()) {
@@ -730,7 +753,7 @@ public class PastryNode extends Thread {
 						replyMsg = new ErrorMsg("Node does not contain data with id '" + readDataID + "'.");
 					} else {
 						//read data from disk
-						File readFile = new File(storageDir + File.separator + readDataID);
+						File readFile = new File(getFilename(storageDir, readDataID));
 						byte[] data = new byte[(int)readFile.length()];
 						FileInputStream fileIn = new FileInputStream(readFile);
 						if(fileIn.read(data) != readFile.length()) {

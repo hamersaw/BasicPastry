@@ -1,7 +1,5 @@
 package com.hamersaw.basic_pastry.message;
 
-import java.net.InetAddress;
-
 import com.hamersaw.basic_pastry.NodeAddress;
 
 public class NodeInfoMsg extends Message {
