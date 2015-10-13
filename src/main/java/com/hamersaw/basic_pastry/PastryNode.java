@@ -144,7 +144,7 @@ public class PastryNode extends Thread {
 					LOGGER.info("Sending node join message to '" + nodeInfoMsg.getNodeAddress().getInetAddress() + ":" + nodeInfoMsg.getNodeAddress().getPort() + "'");
 
 					//send node join message
-					NodeJoinMsg nodeJoinMsg = new NodeJoinMsg(id, 0, new NodeAddress(serverSocket.getInetAddress(), port));
+					NodeJoinMsg nodeJoinMsg = new NodeJoinMsg(id, 0, new NodeAddress(null, port));
 					nodeJoinMsg.addHop(nodeInfoMsg.getNodeAddress());
 					Socket nodeSocket = new Socket(nodeInfoMsg.getNodeAddress().getInetAddress(), nodeInfoMsg.getNodeAddress().getPort());
 					ObjectOutputStream nodeOut = new ObjectOutputStream(nodeSocket.getOutputStream());
