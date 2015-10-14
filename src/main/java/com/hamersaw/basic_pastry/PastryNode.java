@@ -240,12 +240,15 @@ public class PastryNode extends Thread {
 		readWriteLock.readLock().lock();
 		try {
 			String nodeIDStr = HexConverter.convertBytesToHex(nodeID);
-			int minDistance = getSingleHexDistance(nodeIDStr.substring(prefixLength, prefixLength+1), nodeIDStr.substring(prefixLength, prefixLength+1));
+			int minDistance = getSingleHexDistance(idStr.substring(prefixLength, prefixLength+1), nodeIDStr.substring(prefixLength, prefixLength+1));
+			short minValue = (short) convertSingleHexToInt(idStr.substring(prefixLength, prefixLength+1));
 			NodeAddress nodeAddress = null;
 			for(Entry<String,NodeAddress> entry : routingTable[prefixLength].entrySet()) {
 				int distance = getSingleHexDistance(entry.getKey(), nodeIDStr.substring(prefixLength, prefixLength+1));
-				if(distance < minDistance) {
+				short value = (short) convertSingleHexToInt(entry.getKey());
+				if(distance < minDistance || (distance == minDistance && minValue < value )) {
 					minDistance = distance;
+					minValue = value;
 					nodeAddress = entry.getValue();
 				}
 			}
@@ -260,14 +263,16 @@ public class PastryNode extends Thread {
 		try {
 			short nodeIDValue = convertBytesToShort(nodeID);
 			int minDistance = Math.min(lessThanDistance(idValue, nodeIDValue), greaterThanDistance(idValue, nodeIDValue));
+			short minValue = nodeIDValue;
 			NodeAddress minNodeAddress = null;
 
 			//check less than leaf set distances
 			for(byte[] bytes : lessThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				if(distance < minDistance) {
+				if(distance < minDistance || (distance == minDistance && minValue < bytesValue)) {
 					minDistance = distance;
+					minValue = bytesValue;
 					minNodeAddress = lessThanLS.get(bytes);
 				}
 			}
@@ -276,8 +281,9 @@ public class PastryNode extends Thread {
 			for(byte[] bytes : greaterThanLS.keySet()) {
 				short bytesValue = convertBytesToShort(bytes);
 				int distance = Math.min(lessThanDistance(bytesValue, nodeIDValue), greaterThanDistance(bytesValue, nodeIDValue));
-				if(distance < minDistance) {
+				if(distance < minDistance || (distance == minDistance && minValue < bytesValue)) {
 					minDistance = distance;
+					minValue = bytesValue;
 					minNodeAddress = greaterThanLS.get(bytes);
 				}
 			}
