@@ -474,7 +474,7 @@ public class PastryNode extends Thread {
 					}
 
 					//find closest node in leaf set
-					if(nodeAddress == null) {
+					if(nodeAddress == null || nodeJoinMsg.hopContains(nodeAddress)) {
 						nodeAddress = searchLeafSetClosest(nodeJoinMsg.getID());
 					}
 

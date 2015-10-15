@@ -41,6 +41,10 @@ public class NodeJoinMsg extends Message {
 		hops.add(nodeAddress);
 	}
 
+	public boolean hopContains(NodeAddress nodeAddress) {
+		return hops.contains(nodeAddress);
+	}
+
 	@Override
 	public int getMsgType() {
 		return NODE_JOIN_MSG;
