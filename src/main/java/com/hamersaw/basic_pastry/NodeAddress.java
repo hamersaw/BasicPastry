@@ -5,10 +5,12 @@ import java.io.Serializable;
 import java.net.InetAddress;
 
 public class NodeAddress implements Serializable {
+	private String nodeName;
 	private InetAddress inetAddress;
 	private int port;
 
-	public NodeAddress(InetAddress inetAddress, int port) {
+	public NodeAddress(String nodeName, InetAddress inetAddress, int port) {
+		this.nodeName = nodeName;
 		this.inetAddress = inetAddress;
 		this.port = port;
 	}
@@ -23,6 +25,10 @@ public class NodeAddress implements Serializable {
 
 	public int getPort() {
 		return port;
+	}
+
+	public String getNodeName() {
+		return nodeName;
 	}
 
 	@Override
@@ -40,8 +46,13 @@ public class NodeAddress implements Serializable {
 		return false;
 	}
 
-	@Override
+	/*@Override
 	public String toString() {
 		return (inetAddress != null ? inetAddress.toString() : "null") + ":" + port;
+	}*/
+
+	@Override
+	public String toString() {
+		return nodeName;
 	}
 }

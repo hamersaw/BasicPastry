@@ -163,7 +163,7 @@ public class StoreData {
 		ServerSocket serverSocket = new ServerSocket(serverPort);
 
 		//send store data message to random node
-		LookupNodeMsg lookupNodeMsg = new LookupNodeMsg(id, new NodeAddress(null, serverPort), 0);
+		LookupNodeMsg lookupNodeMsg = new LookupNodeMsg(id, new NodeAddress("StoreData", null, serverPort), 0);
 		lookupNodeMsg.addHop(seedNodeAddress);
 		Socket seedSocket = new Socket(seedNodeAddress.getInetAddress(), seedNodeAddress.getPort());
 		ObjectOutputStream seedOut = new ObjectOutputStream(seedSocket.getOutputStream());

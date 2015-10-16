@@ -159,7 +159,7 @@ public class DiscoveryNode extends Thread {
 							}
 						}
 
-						addNode(registerNodeMsg.getID(), new NodeAddress(socket.getInetAddress(), registerNodeMsg.getPort()));
+						addNode(registerNodeMsg.getID(), new NodeAddress(registerNodeMsg.getNodeName(), socket.getInetAddress(), registerNodeMsg.getPort()));
 					} catch(Exception e) {
 						replyMsg = new ErrorMsg(e.getMessage());
 					}
